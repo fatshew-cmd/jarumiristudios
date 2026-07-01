@@ -10,6 +10,13 @@ const User = require("./models/User");
 const Coupon = require("./models/Coupon");
 const Notification = require("./models/Notification");
 const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert } = require("./lib/mailer");
+const { startDepositExpiryJob } = require("./lib/depositExpiry");
+
+function endOfDay(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(`${dateStr}T23:59:59`);
+  return isNaN(d.getTime()) ? null : d;
+}
 
 const STATUS_LABELS = {
   pending: "Pending",
@@ -111,7 +118,10 @@ const requireClient = (req, res, next) => {
 // Database
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
+  .then(() => {
+    console.log("MongoDB connected");
+    startDepositExpiryJob(stripe);
+  })
   .catch((err) => console.error("MongoDB error:", err));
 
 // File upload (multer)
@@ -238,12 +248,12 @@ app.get("/track", async (req, res) => {
     const booking = await BookingRequest.findOne({
       name: { $regex: new RegExp(`^${name?.trim()}$`, "i") },
       email: email?.trim().toLowerCase(),
-    }).select("crCode name serviceType pricingTier budget status createdAt");
+    }).select("crCode name serviceType pricingTier budget status depositStatus depositDueDate deliveryDate createdAt");
     return res.render("track", { searched: true, method: "identity", name: name?.trim(), email: email?.trim(), booking });
   }
 
   const booking = await BookingRequest.findOne({ crCode: code.toUpperCase().trim() })
-    .select("crCode name serviceType pricingTier budget status createdAt");
+    .select("crCode name serviceType pricingTier budget status depositStatus depositDueDate deliveryDate createdAt");
   res.render("track", { searched: true, method: "code", code: code.toUpperCase().trim(), booking });
 });
 
@@ -489,7 +499,7 @@ app.get("/dashboard", requireClient, async (req, res) => {
   const user = await User.findById(req.session.userId).populate({
     path: "bookings",
     match: { filesDeleted: { $ne: true } },
-    select: "crCode serviceType pricingTier addOns discountAmount status createdAt revisions uploadedFiles agreedPrice depositStatus finalPaymentStatus projectBrief",
+    select: "crCode serviceType pricingTier addOns discountAmount status createdAt revisions uploadedFiles agreedPrice depositStatus finalPaymentStatus projectBrief archived",
     options: { sort: { createdAt: -1 } },
   });
   if (!user) {
@@ -680,6 +690,11 @@ app.post("/admin/booking/:id/send-deposit", requireAdmin, async (req, res) => {
   const agreedPrice = parseFloat(req.body.agreedPrice);
   if (!agreedPrice || agreedPrice <= 0) return res.redirect(`/admin/booking/${req.params.id}`);
 
+  const depositDueDate = endOfDay(req.body.dueDate);
+  if (!depositDueDate || depositDueDate <= new Date()) {
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent("Deposit due date must be a valid future date.")}`);
+  }
+
   try {
     const existing = await stripe.customers.list({ email: booking.email, limit: 1 });
     const customer = existing.data.length
@@ -693,7 +708,7 @@ app.post("/admin/booking/:id/send-deposit", requireAdmin, async (req, res) => {
     const invoice = await stripe.invoices.create({
       customer: customer.id,
       collection_method: "send_invoice",
-      days_until_due: 7,
+      due_date: Math.floor(depositDueDate.getTime() / 1000),
       currency: "usd",
       metadata: { crCode: booking.crCode },
     });
@@ -714,6 +729,7 @@ app.post("/admin/booking/:id/send-deposit", requireAdmin, async (req, res) => {
     booking.depositInvoiceId = invoice.id;
     booking.depositStatus = "pending";
     booking.status = "accepted";
+    booking.depositDueDate = depositDueDate;
     await booking.save();
 
     sendAcceptanceEmail(booking);
@@ -733,6 +749,34 @@ app.post("/admin/booking/:id/send-deposit", requireAdmin, async (req, res) => {
     return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
   }
 
+  res.redirect(`/admin/booking/${req.params.id}`);
+});
+
+app.post("/admin/booking/:id/deposit-due-date", requireAdmin, async (req, res) => {
+  const booking = await BookingRequest.findById(req.params.id);
+  if (!booking || booking.depositStatus !== "pending") return res.redirect(`/admin/booking/${req.params.id}`);
+
+  const depositDueDate = endOfDay(req.body.dueDate);
+  if (!depositDueDate || depositDueDate <= new Date()) {
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent("Deposit due date must be a valid future date.")}`);
+  }
+
+  booking.depositDueDate = depositDueDate;
+  await booking.save();
+  res.redirect(`/admin/booking/${req.params.id}`);
+});
+
+app.post("/admin/booking/:id/delivery-date", requireAdmin, async (req, res) => {
+  const booking = await BookingRequest.findById(req.params.id);
+  if (!booking || booking.depositStatus !== "paid") return res.redirect(`/admin/booking/${req.params.id}`);
+
+  if (req.body.deliveryDate) {
+    const parsed = new Date(`${req.body.deliveryDate}T00:00:00`);
+    if (!isNaN(parsed.getTime())) booking.deliveryDate = parsed;
+  } else {
+    booking.deliveryDate = null;
+  }
+  await booking.save();
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 

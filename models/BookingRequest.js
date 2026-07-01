@@ -40,6 +40,8 @@ const bookingRequestSchema = new mongoose.Schema(
     finalInvoiceId: { type: String },
     depositStatus: { type: String, enum: ["none", "pending", "paid"], default: "none" },
     finalPaymentStatus: { type: String, enum: ["none", "pending", "paid"], default: "none" },
+    depositDueDate: { type: Date },
+    deliveryDate: { type: Date },
     couponCode: { type: String },
     discountAmount: { type: Number, default: 0 },
     clientId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },

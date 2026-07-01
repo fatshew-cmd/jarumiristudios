@@ -156,7 +156,17 @@
       const currentIdx = isDeclined ? -1 : STEPS.indexOf(booking.status);
     %>
     <div class="section-card">
-      <% if (isDeclined) { %>
+      <% if (booking.archived) { %>
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+          <iconify-icon icon="material-symbols-light:archive-outline" width="16" height="16" class="text-gray-400"></iconify-icon>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-gray-400">Project archived</p>
+          <p class="text-xs text-gray-500 mt-0.5">This project has been archived and is no longer active. You can still view its details or delete it below.</p>
+        </div>
+      </div>
+      <% } else if (isDeclined) { %>
       <div class="flex items-center gap-3">
         <div class="w-8 h-8 rounded-full bg-red-500/10 border border-red-500/25 flex items-center justify-center shrink-0">
           <iconify-icon icon="material-symbols-light:close" width="16" height="16" class="text-red-400"></iconify-icon>
@@ -406,7 +416,7 @@
     <% } %>
 
     <!-- Request a revision -->
-    <% if (booking.status === 'accepted' || booking.status === 'in-progress') { %>
+    <% if (!booking.archived && (booking.status === 'accepted' || booking.status === 'in-progress')) { %>
     <div class="section-card">
       <h2 class="text-sm font-semibold text-white mb-1">Request a revision</h2>
       <p class="text-gray-500 text-xs mb-4">Describe what you'd like changed. We'll review it and follow up via email or Telegram.</p>
@@ -423,6 +433,19 @@
       <p class="text-gray-500 text-sm">Revision requests are available once your project is accepted.</p>
     </div>
     <% } %>
+
+    <!-- Delete project -->
+    <div class="section-card">
+      <h2 class="text-sm font-semibold text-white mb-1">Delete project</h2>
+      <p class="text-gray-500 text-xs mb-4">Permanently removes your uploaded files. Your project brief stays on record — this can't be undone.</p>
+      <form action="/dashboard/booking/<%= booking._id %>/delete" method="POST"
+        onsubmit="return confirm('Delete this project? Uploaded files will be permanently removed. This cannot be undone.');">
+        <button type="submit"
+          class="px-6 py-3 rounded-full bg-red-500/90 hover:bg-red-500 text-white text-sm font-semibold transition-colors">
+          Delete project
+        </button>
+      </form>
+    </div>
 
   </main>
   </div><!-- /lg:ml-[220px] -->

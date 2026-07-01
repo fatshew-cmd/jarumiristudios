@@ -372,6 +372,16 @@
                 <% if (!canSendDeposit) { %>disabled<% } %>
                 class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-amber-400/50 disabled:opacity-40 disabled:cursor-not-allowed" />
             </div>
+            <div>
+              <label class="detail-label block mb-1">Deposit due date</label>
+              <%
+                const _defaultDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+              %>
+              <input type="date" name="dueDate" required value="<%= _defaultDueDate %>"
+                <% if (!canSendDeposit) { %>disabled<% } %>
+                class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50 disabled:opacity-40 disabled:cursor-not-allowed" />
+              <p class="text-xs text-gray-600 mt-1">Unpaid deposit past this date auto-declines the project.</p>
+            </div>
             <button id="deposit-submit-btn" type="submit" disabled
               class="w-full px-4 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-300 disabled:hover:bg-amber-400">
               Send Deposit Invoice (30%)
@@ -382,13 +392,25 @@
           <% } %>
 
           <% } else if (booking.depositStatus === 'pending') { %>
-          <div class="flex items-start gap-2.5">
+          <div class="flex items-start gap-2.5 mb-4">
             <div class="w-2 h-2 rounded-full bg-amber-400 mt-1.5 shrink-0"></div>
             <div>
               <p class="text-sm text-white font-medium">Deposit invoice sent</p>
               <p class="text-xs text-gray-500 mt-0.5">Awaiting client payment ($<%= (booking.agreedPrice * 0.30).toFixed(2) %>)</p>
+              <% if (booking.depositDueDate) { %>
+              <p class="text-xs text-amber-400 mt-0.5">Due by <%= new Date(booking.depositDueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %> — auto-declines if unpaid</p>
+              <% } %>
             </div>
           </div>
+          <form action="/admin/booking/<%= booking._id %>/deposit-due-date" method="POST" class="flex items-center gap-2">
+            <input type="date" name="dueDate"
+              <% if (booking.depositDueDate) { %>value="<%= new Date(booking.depositDueDate).toISOString().slice(0, 10) %>"<% } %>
+              class="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
+            <button type="submit"
+              class="px-3 py-2 rounded-md border border-white/10 text-xs text-gray-400 hover:text-white hover:border-white/25 transition-colors shrink-0">
+              Update
+            </button>
+          </form>
 
           <% } else if (booking.depositStatus === 'paid' && booking.finalPaymentStatus === 'none') { %>
           <div class="flex items-start gap-2.5 mb-4">
@@ -438,6 +460,28 @@
           <% } %>
         </div>
 
+        <% if (booking.depositStatus === 'paid') { %>
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-4">Delivery date</h2>
+          <% if (booking.deliveryDate) { %>
+          <p class="text-white font-semibold text-sm mb-3">
+            <%= new Date(booking.deliveryDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %>
+          </p>
+          <% } else { %>
+          <p class="text-xs text-gray-600 mb-3">Not set yet — the client won't see a delivery estimate on /track until you set one.</p>
+          <% } %>
+          <form action="/admin/booking/<%= booking._id %>/delivery-date" method="POST" class="flex items-center gap-2">
+            <input type="date" name="deliveryDate"
+              <% if (booking.deliveryDate) { %>value="<%= new Date(booking.deliveryDate).toISOString().slice(0, 10) %>"<% } %>
+              class="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
+            <button type="submit"
+              class="px-3 py-2 rounded-md border border-white/10 text-xs text-gray-400 hover:text-white hover:border-white/25 transition-colors shrink-0">
+              Save
+            </button>
+          </form>
+        </div>
+        <% } %>
+
         <div class="card">
           <h2 class="text-base font-semibold text-white mb-3">Quick actions</h2>
           <div class="space-y-2">
@@ -481,6 +525,7 @@
   <% if (booking.depositStatus === 'none') { %>
   <%
     const _modalEstimate = ((TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0) - (booking.discountAmount || 0));
+    const _defaultDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   %>
   <div id="accept-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center px-4">
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="document.getElementById('accept-modal').classList.add('hidden')"></div>
@@ -497,6 +542,12 @@
             <% if (_modalEstimate > 0) { %>value="<%= _modalEstimate.toFixed(2) %>"<% } %>
             placeholder="e.g. 250.00"
             class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-amber-400/50" />
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 uppercase tracking-wider block mb-1.5">Deposit due date</label>
+          <input type="date" name="dueDate" required value="<%= _defaultDueDate %>"
+            class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
+          <p class="text-xs text-gray-600 mt-1">Unpaid deposit past this date auto-declines the project.</p>
         </div>
         <div class="flex gap-3 pt-1">
           <button type="button" onclick="document.getElementById('accept-modal').classList.add('hidden')"
