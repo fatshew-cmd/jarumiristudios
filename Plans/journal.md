@@ -1,5 +1,22 @@
 # Journal
 
+## 2026-06-30 — Planning Docs Reconciled With Implementation
+
+**What was found:** `pages.md`, `landing-page.md`, and `june26-milestone.md` had drifted well behind `server.js` — several full subsystems existed in code with no record in the plans:
+
+- Client account system (`User` model, `/login`, `/signup`, `/dashboard/*`) — bookings can be submitted as a guest and optionally linked to a persistent account
+- `/dashboard/new`, `/dashboard/gallery`, `/dashboard/account`, `/dashboard/notifications` pages, plus client-submitted revision requests on `/dashboard/booking/:id`
+- `Notification` model + `/api/notifications/poll` live-badge system
+- `Coupon` model + `/admin/coupons` CRUD, applied on `/hire`
+- Soft-delete/archive flow for bookings (`archived` flag + `uploads/_archive/` move) instead of hard deletion
+- Direct file upload via `multer` (250MB/file, 20 files) replaced the originally-planned Telegram-only delivery model from `stack.md`; Telegram is now just a fallback for oversized files
+- No standalone `/pricing` route — pricing lives in the `#pricing` section of `/`
+- Landing page also has `#process` (How It Works) and `#career` (recruiting) sections never recorded in `landing-page.md`
+
+**What changed:** Updated all four docs to match current `server.js`/model/view state. No code changes made.
+
+---
+
 ## 2026-06-30 — Upload Directory Reorganization
 
 **What was built:**

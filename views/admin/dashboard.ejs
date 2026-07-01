@@ -70,11 +70,12 @@
   <main class="max-w-350 mx-auto px-6 py-10">
 
     <!-- Title + filters -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
       <div>
-        <h1 class="text-2xl font-bold text-white">Booking requests</h1>
+        <h1 class="text-2xl font-bold text-white"><%= archivedView ? 'Archived requests' : 'Booking requests' %></h1>
         <p class="text-gray-500 text-sm mt-1"><span id="result-count"><%= total %></span> total</p>
       </div>
+      <% if (!archivedView) { %>
       <div class="flex gap-2 flex-wrap" id="filter-bar">
         <button type="button" onclick="toggleFilter('all')"
           class="filter-btn text-xs font-semibold px-4 py-2 rounded-full border transition-colors"
@@ -89,6 +90,19 @@
         </button>
         <% }) %>
       </div>
+      <% } %>
+    </div>
+
+    <!-- Active / Archived tabs -->
+    <div class="flex gap-1 mb-6 border-b border-white/8">
+      <a href="/admin"
+        class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors <%= !archivedView ? 'text-white border-amber-400' : 'text-gray-500 border-transparent hover:text-gray-300' %>">
+        Active
+      </a>
+      <a href="/admin?view=archived"
+        class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors <%= archivedView ? 'text-white border-amber-400' : 'text-gray-500 border-transparent hover:text-gray-300' %>">
+        Archived
+      </a>
     </div>
 
     <!-- Search bar -->
@@ -132,13 +146,14 @@
     </div>
 
     <!-- Bulk action bar -->
-    <form id="bulk-form" action="/admin/bookings/bulk-delete" method="POST">
+    <% if (!archivedView) { %>
+    <form id="bulk-form" action="/admin/bookings/bulk-archive" method="POST">
       <div id="bulk-bar">
         <span id="bulk-count" class="text-sm text-gray-400"></span>
-        <button type="submit" onclick="return confirmBulkDelete()"
-          class="flex items-center gap-1.5 text-sm font-semibold text-red-400 hover:text-red-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-500/10">
-          <iconify-icon icon="material-symbols-light:delete" width="20" height="20"></iconify-icon>
-          Delete selected
+        <button type="submit" onclick="return confirmBulkArchive()"
+          class="flex items-center gap-1.5 text-sm font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-amber-500/10">
+          <iconify-icon icon="material-symbols-light:archive" width="20" height="20"></iconify-icon>
+          Archive selected
         </button>
         <div style="width:1px;height:20px;background:rgba(255,255,255,0.08);"></div>
         <button type="button" onclick="adminClearSelection()" title="Clear selection"
@@ -149,6 +164,7 @@
       </div>
       <div id="hidden-ids"></div>
     </form>
+    <% } %>
 
     <!-- Table -->
     <% if (bookings.length === 0) { %>
@@ -162,9 +178,13 @@
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-white/5 text-left">
+            <% if (archivedView) { %>
+            <th class="row-cb"></th>
+            <% } else { %>
             <th class="row-cb">
               <iconify-icon id="select-all-cb" icon="material-symbols-light:check-box-outline-blank" width="20" height="20" class="cb-icon" onclick="toggleSelectAll()"></iconify-icon>
             </th>
+            <% } %>
             <th class="thumb-cell"></th>
             <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">BR Code</th>
             <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Client</th>
@@ -174,6 +194,9 @@
             <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Est. Cost</th>
             <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
             <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Date</th>
+            <% if (archivedView) { %>
+            <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+            <% } %>
           </tr>
         </thead>
         <tbody class="divide-y divide-white/5">
@@ -188,12 +211,22 @@
             data-services="<%= b.serviceType.join(', ').toLowerCase() %>"
             data-package="<%= b.pricingTier.toLowerCase() %>"
             onclick="rowClick(event, '<%= b._id %>', '/admin/booking/<%= b._id %>')" style="cursor:pointer;">
+            <% if (archivedView) { %>
+            <td class="row-cb"></td>
+            <% } else { %>
             <td class="row-cb" onclick="event.stopPropagation()">
               <iconify-icon icon="material-symbols-light:check-box-outline-blank" width="20" height="20" class="cb-icon" onclick="toggleRow(this, '<%= b._id %>')"></iconify-icon>
             </td>
+            <% } %>
             <td class="thumb-cell">
               <% const _vf = b.uploadedFiles && b.uploadedFiles.find(f => f.mimetype && f.mimetype.startsWith('video/')); %>
               <% const _if = !_vf && b.uploadedFiles && b.uploadedFiles.find(f => f.mimetype && f.mimetype.startsWith('image/')); %>
+              <% if (b.filesDeleted) { %>
+              <div class="thumb-wrap" style="flex-direction:column;gap:2px;" title="Client permanently deleted the uploaded files">
+                <iconify-icon icon="material-symbols-light:delete-outline" width="16" height="16" class="thumb-placeholder"></iconify-icon>
+                <span style="font-size:8px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#f87171;">deleted</span>
+              </div>
+              <% } else { %>
               <div class="thumb-wrap">
                 <% if (_vf) { %>
                   <video src="/admin/uploads/<%= _vf.storedName %>" class="project-thumb" muted preload="metadata"></video>
@@ -203,6 +236,7 @@
                   <iconify-icon icon="material-symbols-light:movie" width="20" height="20" class="thumb-placeholder"></iconify-icon>
                 <% } %>
               </div>
+              <% } %>
             </td>
             <td class="px-5 py-4 font-mono text-amber-400 font-semibold text-xs whitespace-nowrap"><%= b.crCode %></td>
             <td class="px-5 py-4">
@@ -240,6 +274,17 @@
             <td class="px-5 py-4 hidden sm:table-cell text-gray-500 text-xs whitespace-nowrap">
               <%= new Date(b.createdAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) %>
             </td>
+            <% if (archivedView) { %>
+            <td class="px-5 py-4 text-right" onclick="event.stopPropagation()">
+              <form action="/admin/booking/<%= b._id %>/restore" method="POST">
+                <button type="submit"
+                  class="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-amber-500/10">
+                  <iconify-icon icon="material-symbols-light:restore" width="16" height="16"></iconify-icon>
+                  Restore
+                </button>
+              </form>
+            </td>
+            <% } %>
           </tr>
           <% }) %>
         </tbody>
@@ -387,8 +432,8 @@
       window.location = url;
     }
 
-    function confirmBulkDelete() {
-      return confirm(`Delete ${checkedIds.size} project(s)? This cannot be undone.`);
+    function confirmBulkArchive() {
+      return confirm(`Archive ${checkedIds.size} project(s)? Files stay stored — you can restore them anytime.`);
     }
 
     function adminClearSelection() {

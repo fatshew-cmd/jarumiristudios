@@ -25,7 +25,7 @@
     .status-declined  { background: rgba(239,68,68,0.12);   color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
     .detail-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7280; margin-bottom: 4px; }
     .detail-value { font-size: 14px; color: #e5e7eb; }
-    .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; }
+    .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 16px; }
     .status-btn {
       font-size: 12px; font-weight: 600; padding: 8px 16px; border-radius: 999px;
       border: 1px solid rgba(255,255,255,0.1);
@@ -51,6 +51,12 @@
         <a href="/admin" class="text-gray-500 hover:text-white transition-colors text-sm">← All requests</a>
         <span class="text-white/10">|</span>
         <span class="font-mono text-amber-400 text-sm font-semibold"><%= booking.crCode %></span>
+        <% if (booking.archived) { %>
+        <span class="status-badge" style="background:rgba(255,255,255,0.06);color:#9ca3af;border:1px solid rgba(255,255,255,0.12);">Archived</span>
+        <% } %>
+        <% if (booking.filesDeleted) { %>
+        <span class="status-badge" style="background:rgba(239,68,68,0.1);color:#f87171;border:1px solid rgba(239,68,68,0.2);">Files deleted by client</span>
+        <% } %>
       </div>
       <a href="/admin/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
     </div>
@@ -73,7 +79,7 @@
       </div>
 
       <!-- Status picker -->
-      <div class="card !p-5 flex flex-col gap-3 min-w-[220px]">
+      <div class="card p-4! flex flex-col gap-3 min-w-[220px]">
         <p class="detail-label">Status</p>
         <div class="flex flex-wrap gap-2">
           <% ['pending','in-review','accepted','declined','in-progress','completed'].forEach(s => { %>
@@ -154,6 +160,11 @@
         </div>
 
         <!-- Files -->
+        <% if (booking.filesDeleted) { %>
+        <div class="card">
+          <p class="text-sm text-red-400">Uploaded files were permanently deleted by the client. The project brief above remains on record.</p>
+        </div>
+        <% } %>
         <% if (booking.uploadedFiles && booking.uploadedFiles.length > 0) { %>
         <div class="card">
           <h2 class="text-base font-semibold text-white mb-4">Uploaded files <span class="text-gray-600 font-normal text-sm"><%= booking.uploadedFiles.length %></span></h2>
@@ -165,7 +176,7 @@
               const isAudio = /^audio\//i.test(f.mimetype);
               const sizeLabel = f.size < 1024*1024 ? (f.size/1024).toFixed(1)+' KB' : (f.size/1024/1024).toFixed(1)+' MB';
             %>
-            <div class="border border-white/5 rounded-xl overflow-hidden">
+            <div class="border border-white/5 rounded-md overflow-hidden">
 
               <% if (isImage) { %>
               <a href="<%= url %>" target="_blank">
@@ -178,14 +189,14 @@
                 <source src="<%= url %>" type="<%= f.mimetype %>">
               </video>
               <% } else if (isAudio) { %>
-              <div class="px-4 pt-4">
+              <div class="px-3 pt-3">
                 <audio controls class="w-full">
                   <source src="<%= url %>" type="<%= f.mimetype %>">
                 </audio>
               </div>
               <% } %>
 
-              <div class="flex items-center justify-between px-4 py-3 gap-3">
+              <div class="flex items-center justify-between px-3 py-2.5 gap-3">
                 <div class="flex items-center gap-2.5 min-w-0">
                   <% if (isVideo) { %>
                   <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M4 6h8a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2z"/></svg>
@@ -242,7 +253,7 @@
           </h2>
           <div class="space-y-3">
             <% booking.revisions.forEach(r => { %>
-            <div class="border border-white/5 rounded-xl px-4 py-3 <%= r.status === 'pending' ? 'border-amber-400/15 bg-amber-400/5' : '' %>">
+            <div class="border border-white/5 rounded-md px-3 py-2.5 <%= r.status === 'pending' ? 'border-amber-400/15 bg-amber-400/5' : '' %>">
               <p class="text-gray-300 text-sm whitespace-pre-wrap mb-2"><%= r.message %></p>
               <div class="flex items-center justify-between gap-3">
                 <p class="text-gray-600 text-xs"><%= new Date(r.createdAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) %></p>
@@ -266,6 +277,45 @@
 
       <!-- Sidebar: contact -->
       <div class="space-y-6">
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-3">Notes</h2>
+          <% if (booking.adminNotes && booking.adminNotes.length > 0) { %>
+          <div class="space-y-2.5 mb-3 max-h-64 overflow-y-auto">
+            <% [...booking.adminNotes].reverse().forEach(n => { %>
+            <div class="border border-white/5 rounded-md px-3 py-2" id="note-view-<%= n._id %>">
+              <p class="text-gray-300 text-sm whitespace-pre-wrap"><%= n.text %></p>
+              <div class="flex items-center justify-between mt-1">
+                <p class="text-gray-600 text-xs"><%= new Date(n.createdAt).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) %></p>
+                <div class="flex items-center gap-3">
+                  <button type="button" onclick="document.getElementById('note-view-<%= n._id %>').classList.add('hidden'); document.getElementById('note-edit-<%= n._id %>').classList.remove('hidden');"
+                    class="text-xs text-gray-600 hover:text-white transition-colors">Edit</button>
+                  <form action="/admin/booking/<%= booking._id %>/notes/<%= n._id %>/delete" method="POST">
+                    <button type="submit" class="text-xs text-gray-600 hover:text-red-400 transition-colors">Delete</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+            <form action="/admin/booking/<%= booking._id %>/notes/<%= n._id %>/edit" method="POST" class="hidden space-y-2" id="note-edit-<%= n._id %>">
+              <textarea name="text" class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm resize-none h-12 focus:outline-none focus:border-amber-400/50"><%= n.text %></textarea>
+              <div class="flex gap-2">
+                <button type="submit" class="text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1 rounded-full border border-amber-400/30 hover:border-amber-400/60">Save</button>
+                <button type="button" onclick="document.getElementById('note-edit-<%= n._id %>').classList.add('hidden'); document.getElementById('note-view-<%= n._id %>').classList.remove('hidden');"
+                  class="text-xs text-gray-500 hover:text-white transition-colors px-3 py-1 rounded-full border border-white/10 hover:border-white/25">Cancel</button>
+              </div>
+            </form>
+            <% }) %>
+          </div>
+          <% } %>
+          <form action="/admin/booking/<%= booking._id %>/notes" method="POST" class="space-y-3">
+            <textarea name="note" placeholder="Add a note…"
+              class="w-full h-12 bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-amber-400/50 resize-none"></textarea>
+            <button type="submit"
+              class="w-full px-4 py-2.5 rounded-full border border-white/10 text-sm text-gray-300 hover:text-white hover:border-white/25 transition-colors">
+              Add note
+            </button>
+          </form>
+        </div>
+
         <div class="card">
           <h2 class="text-base font-semibold text-white mb-5">Contact</h2>
           <div class="space-y-4">
@@ -297,7 +347,7 @@
         <div class="card">
           <h2 class="text-base font-semibold text-white mb-4">Payment</h2>
           <% if (stripeError) { %>
-          <div class="mb-4 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/25 text-red-400 text-xs">
+          <div class="mb-4 px-3 py-2.5 rounded-md bg-red-500/10 border border-red-500/25 text-red-400 text-xs">
             Stripe error: <%= stripeError %>
           </div>
           <% } %>
@@ -320,7 +370,7 @@
                 placeholder="e.g. 250.00"
                 <% if (_estimatedTotal > 0) { %>value="<%= _estimatedTotal.toFixed(2) %>"<% } %>
                 <% if (!canSendDeposit) { %>disabled<% } %>
-                class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-amber-400/50 disabled:opacity-40 disabled:cursor-not-allowed" />
+                class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-amber-400/50 disabled:opacity-40 disabled:cursor-not-allowed" />
             </div>
             <button id="deposit-submit-btn" type="submit" disabled
               class="w-full px-4 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-300 disabled:hover:bg-amber-400">
@@ -404,11 +454,21 @@
             </a>
             <% } %>
             <div class="pt-2 mt-2 border-t border-white/5">
+              <% if (booking.archived) { %>
+              <form action="/admin/booking/<%= booking._id %>/restore" method="POST">
+                <button type="submit"
+                  class="flex items-center gap-2.5 text-sm text-amber-400 hover:text-amber-300 transition-colors py-1 w-full">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3"/></svg>
+                  Restore project
+                </button>
+              </form>
+              <% } else { %>
               <button type="button" onclick="document.getElementById('delete-modal').classList.remove('hidden')"
                 class="flex items-center gap-2.5 text-sm text-red-500 hover:text-red-400 transition-colors py-1 w-full">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                Delete request
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/></svg>
+                Archive request
               </button>
+              <% } %>
             </div>
           </div>
         </div>
@@ -424,7 +484,7 @@
   %>
   <div id="accept-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center px-4">
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="document.getElementById('accept-modal').classList.add('hidden')"></div>
-    <div class="relative bg-[#111] border border-white/10 rounded-2xl p-8 max-w-sm w-full shadow-2xl">
+    <div class="relative bg-[#111] border border-white/10 rounded-md p-6 max-w-sm w-full shadow-2xl">
       <div class="w-12 h-12 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-5 mx-auto">
         <svg class="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
       </div>
@@ -436,7 +496,7 @@
           <input id="accept-modal-price" type="number" name="agreedPrice" min="1" step="0.01" required
             <% if (_modalEstimate > 0) { %>value="<%= _modalEstimate.toFixed(2) %>"<% } %>
             placeholder="e.g. 250.00"
-            class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-amber-400/50" />
+            class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-amber-400/50" />
         </div>
         <div class="flex gap-3 pt-1">
           <button type="button" onclick="document.getElementById('accept-modal').classList.add('hidden')"
@@ -453,27 +513,27 @@
   </div>
   <% } %>
 
-  <!-- Delete confirmation modal -->
+  <!-- Archive confirmation modal -->
   <div id="delete-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center px-4">
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="document.getElementById('delete-modal').classList.add('hidden')"></div>
-    <div class="relative bg-[#111] border border-white/10 rounded-2xl p-8 max-w-sm w-full shadow-2xl">
+    <div class="relative bg-[#111] border border-white/10 rounded-md p-6 max-w-sm w-full shadow-2xl">
       <div class="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-5 mx-auto">
-        <svg class="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        <svg class="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/></svg>
       </div>
-      <h2 class="text-white font-bold text-lg text-center mb-2">Delete this request?</h2>
+      <h2 class="text-white font-bold text-lg text-center mb-2">Archive this request?</h2>
       <p class="text-gray-500 text-sm text-center mb-6">
         <span class="font-mono text-amber-400"><%= booking.crCode %></span> — <%= booking.name %><br>
-        This cannot be undone.
+        Files stay stored — you can restore this project anytime.
       </p>
       <div class="flex gap-3">
         <button type="button" onclick="document.getElementById('delete-modal').classList.add('hidden')"
           class="flex-1 px-4 py-2.5 rounded-full border border-white/10 text-sm text-gray-400 hover:text-white hover:border-white/25 transition-colors">
           Cancel
         </button>
-        <form action="/admin/booking/<%= booking._id %>/delete" method="POST" class="flex-1">
+        <form action="/admin/booking/<%= booking._id %>/archive" method="POST" class="flex-1">
           <button type="submit"
             class="w-full px-4 py-2.5 rounded-full bg-red-500/90 hover:bg-red-500 text-white text-sm font-semibold transition-colors">
-            Delete
+            Archive
           </button>
         </form>
       </div>

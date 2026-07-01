@@ -199,6 +199,13 @@ function writeBookingTxt(booking) {
   fs.writeFileSync(path.join(dir, "booking.txt"), lines.join("\n"), "utf8");
 }
 
+// Permanently removes uploaded media for a booking while keeping booking.txt as a record
+function hardDeleteBookingFiles(crCode) {
+  if (!crCode) return;
+  fs.rm(path.join(__dirname, "uploads", crCode, "files"), { recursive: true, force: true }, () => {});
+  fs.rm(path.join(__dirname, "uploads", "_archive", crCode, "files"), { recursive: true, force: true }, () => {});
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const type = fileTypeFromMime(file.mimetype);
@@ -481,6 +488,7 @@ app.use("/dashboard", async (req, res, next) => {
 app.get("/dashboard", requireClient, async (req, res) => {
   const user = await User.findById(req.session.userId).populate({
     path: "bookings",
+    match: { filesDeleted: { $ne: true } },
     select: "crCode serviceType pricingTier addOns discountAmount status createdAt revisions uploadedFiles agreedPrice depositStatus finalPaymentStatus projectBrief",
     options: { sort: { createdAt: -1 } },
   });
@@ -559,11 +567,20 @@ app.get("/dashboard/new", requireClient, async (req, res) => {
 
 app.get("/dashboard/booking/:id", requireClient, async (req, res) => {
   const [booking, user] = await Promise.all([
-    BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId }),
+    BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId, filesDeleted: { $ne: true } }),
     User.findById(req.session.userId).select("email"),
   ]);
   if (!booking) return res.redirect("/dashboard");
   res.render("dashboard-booking", { booking, user });
+});
+
+app.post("/dashboard/booking/:id/delete", requireClient, async (req, res) => {
+  const booking = await BookingRequest.findOneAndUpdate(
+    { _id: req.params.id, clientId: req.session.userId },
+    { filesDeleted: true, uploadedFiles: [] }
+  );
+  if (booking?.crCode) hardDeleteBookingFiles(booking.crCode);
+  res.redirect("/dashboard");
 });
 
 app.post("/dashboard/booking/:id/revision", requireClient, async (req, res) => {
@@ -595,12 +612,14 @@ app.get("/admin/logout", (req, res) => {
 });
 
 app.get("/admin", requireAdmin, async (req, res) => {
+  const archivedView = req.query.view === "archived";
+  const filter = archivedView ? { archived: true } : { archived: { $ne: true } };
   const [bookings, total, pending] = await Promise.all([
-    BookingRequest.find({ archived: { $ne: true } }).sort({ createdAt: -1 }),
-    BookingRequest.countDocuments({ archived: { $ne: true } }),
+    BookingRequest.find(filter).sort({ createdAt: -1 }),
+    BookingRequest.countDocuments(filter),
     BookingRequest.countDocuments({ archived: { $ne: true }, status: "pending" }),
   ]);
-  res.render("admin/dashboard", { bookings, total, pending, TIER_PRICES, ADDON_PRICES });
+  res.render("admin/dashboard", { bookings, total, pending, TIER_PRICES, ADDON_PRICES, archivedView });
 });
 
 app.get("/admin/booking/:id", requireAdmin, async (req, res) => {
@@ -626,6 +645,30 @@ app.post("/admin/booking/:id/status", requireAdmin, async (req, res) => {
         ? `Project ${booking.crCode} has been declined.`
         : `Project ${booking.crCode} has moved to ${label}.`,
     });
+  }
+  res.redirect(`/admin/booking/${req.params.id}`);
+});
+
+app.post("/admin/booking/:id/notes", requireAdmin, async (req, res) => {
+  const text = (req.body.note || "").trim();
+  if (text) {
+    await BookingRequest.findByIdAndUpdate(req.params.id, { $push: { adminNotes: { text } } });
+  }
+  res.redirect(`/admin/booking/${req.params.id}`);
+});
+
+app.post("/admin/booking/:id/notes/:noteId/delete", requireAdmin, async (req, res) => {
+  await BookingRequest.findByIdAndUpdate(req.params.id, { $pull: { adminNotes: { _id: req.params.noteId } } });
+  res.redirect(`/admin/booking/${req.params.id}`);
+});
+
+app.post("/admin/booking/:id/notes/:noteId/edit", requireAdmin, async (req, res) => {
+  const text = (req.body.text || "").trim();
+  if (text) {
+    await BookingRequest.updateOne(
+      { _id: req.params.id, "adminNotes._id": req.params.noteId },
+      { $set: { "adminNotes.$.text": text } }
+    );
   }
   res.redirect(`/admin/booking/${req.params.id}`);
 });
@@ -742,7 +785,7 @@ app.post("/admin/booking/:id/send-final", requireAdmin, async (req, res) => {
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 
-app.post("/admin/booking/:id/delete", requireAdmin, async (req, res) => {
+app.post("/admin/booking/:id/archive", requireAdmin, async (req, res) => {
   const booking = await BookingRequest.findById(req.params.id);
   if (booking && booking.clientId) {
     await Notification.create({
@@ -750,7 +793,7 @@ app.post("/admin/booking/:id/delete", requireAdmin, async (req, res) => {
       bookingId: booking._id,
       crCode: booking.crCode,
       type: "project_dismissed",
-      message: `Project ${booking.crCode} has been removed.`,
+      message: `Project ${booking.crCode} has been archived.`,
     });
   }
   await BookingRequest.findByIdAndUpdate(req.params.id, { archived: true });
@@ -762,7 +805,7 @@ app.post("/admin/booking/:id/delete", requireAdmin, async (req, res) => {
   res.redirect("/admin");
 });
 
-app.post("/admin/bookings/bulk-delete", requireAdmin, async (req, res) => {
+app.post("/admin/bookings/bulk-archive", requireAdmin, async (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids : [req.body.ids].filter(Boolean);
   if (ids.length) {
     const bookings = await BookingRequest.find({ _id: { $in: ids } }, "clientId crCode _id");
@@ -773,7 +816,7 @@ app.post("/admin/bookings/bulk-delete", requireAdmin, async (req, res) => {
         bookingId: b._id,
         crCode: b.crCode,
         type: "project_dismissed",
-        message: `Project ${b.crCode} has been removed.`,
+        message: `Project ${b.crCode} has been archived.`,
       }));
     if (notifications.length) await Notification.insertMany(notifications);
     await BookingRequest.updateMany({ _id: { $in: ids } }, { archived: true });
@@ -784,6 +827,15 @@ app.post("/admin/bookings/bulk-delete", requireAdmin, async (req, res) => {
         fs.rename(path.join(__dirname, "uploads", b.crCode), path.join(archiveDir, b.crCode), () => {});
       }
     }
+  }
+  res.redirect("/admin");
+});
+
+app.post("/admin/booking/:id/restore", requireAdmin, async (req, res) => {
+  const booking = await BookingRequest.findByIdAndUpdate(req.params.id, { archived: false });
+  if (booking?.crCode) {
+    const archiveDir = path.join(__dirname, "uploads", "_archive");
+    fs.rename(path.join(archiveDir, booking.crCode), path.join(__dirname, "uploads", booking.crCode), () => {});
   }
   res.redirect("/admin");
 });

@@ -3,3 +3,5 @@ node_modules/
 public/output.css
 uploads/
 scripts/auto-commit.log
+server.log
+Screenshot*.png

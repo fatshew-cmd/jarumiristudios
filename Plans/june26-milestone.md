@@ -2,7 +2,6 @@
 
 ## Pending
 
-- [ ] Add `og:image` and `twitter:image` meta tags — needs a logo or cover image asset first
 - [x] Fix How It Works connector line alignment — the `h-px` absolute line may break on certain screen widths
 - [x] Email confirmation to client on booking — send BR code via email (Nodemailer) so client doesn't lose it if they close the tab
 - [x] Email notification to admin on new booking — same Nodemailer setup, two birds one stone
@@ -11,7 +10,7 @@
 - [ ] **Deposit received notification** — email to admin + client when deposit lands; confirms work begins
 - [ ] **Final payment received notification** — email to admin + client when final invoice is paid
 - [x] Organize uploads by BR Code — BR code generated pre-save in the route handler; multer places files into `uploads/<brCode>/files/<type>/`; a `booking.txt` brief snapshot is written alongside
-- [ ] Delete cleanup — when a booking is deleted, remove the booking's `uploads/<brCode>/` folder from disk to prevent accumulation
+- [ ] Permanent delete cleanup — admin delete currently archives (moves `uploads/<brCode>/` to `uploads/_archive/`, keeps the DB record); nothing yet purges `_archive/` or hard-deletes records, so disk usage still grows unbounded over time
 - [ ] Deadline / delivery date field — admin sets it on acceptance, client sees it on `/track`
 - [ ] Admin dashboard pagination — avoid loading all bookings at once as volume grows
 - [ ] `/hire` form UX improvements — live character count on project brief textarea, better mobile layout for the file upload area
@@ -23,7 +22,6 @@
 - [ ] Final deliverable download on `/track` — admin uploads finished files; client downloads them from their tracking page once work is complete
 
 ### Admin QoL
-- [ ] Admin notes field on `/admin/booking/:id` — internal textarea for per-booking context (e.g. rush delivery, special instructions), stored in DB
 - [ ] Bulk status update on dashboard — update multiple bookings at once as volume grows
 - [ ] Date range filter on dashboard — filter bookings by submission date
 
@@ -51,3 +49,10 @@
 - [x] **Stripe webhook** — `POST /webhooks/stripe` registered before `express.json()` with raw body; verifies signature; on `invoice.payment_succeeded` advances `depositStatus`/`finalPaymentStatus` to `paid` and flips booking `status` to `in-progress` / `completed`
 - [x] **BookingRequest schema additions** — `agreedPrice`, `stripeCustomerId`, `depositInvoiceId`, `finalInvoiceId`, `depositStatus` (none/pending/paid), `finalPaymentStatus` (none/pending/paid)
 - [x] **Admin booking UI — payment card** — full state machine: price input + "Send Deposit Invoice (30%)" (disabled until price entered and status ≥ in-review) → "Deposit invoice sent, awaiting payment" → "Deposit received + Send Final Invoice (70%)" → "Final invoice sent, awaiting payment" → "All payments received"
+- [x] **Client account system** — `User` model (bcrypt-hashed password); `/login`, `/logout`, inline `/signup` from `/hire/success` (links the just-submitted booking via crCode); `/hire` and `/login?cr=` both auto-link a booking to the logged-in/just-created account
+- [x] **Client dashboard** — `/dashboard` (all bookings + payment progress), `/dashboard/new` (profile-completeness gate before starting a fresh booking), `/dashboard/booking/:id` (detail + revision requests), `/dashboard/gallery` (uploaded files across all projects), `/dashboard/account` (profile edit, password change, account deletion)
+- [x] **Client-submitted revisions** — clients can post revision request messages on `/dashboard/booking/:id`; admin marks each reviewed from `/admin/booking/:id`
+- [x] **In-app notifications** — `Notification` model; created on status change, invoice sent, payment confirmed, and project dismissal (account-linked bookings only); `/dashboard/notifications` page + `/api/notifications/poll` for a live unread badge
+- [x] **Coupon system** — `Coupon` model (percent/fixed, optional expiry, active toggle); `/admin/coupons` CRUD UI; `/hire/coupon/validate` AJAX check + server-side re-validation on submit; discount applied to booking subtotal and reflected in `booking.txt`
+- [x] **Booking archive (soft delete)** — `POST /admin/booking/:id/delete` and bulk variant set `archived: true` instead of removing the record, move the booking's `uploads/<crCode>/` folder to `uploads/_archive/`, and notify the linked client; file-serving routes check both the active and archived path
+- [x] **Direct file upload replaces Telegram-only delivery** — `/hire` now accepts up to 20 files (250MB each) via `multer`, stored under `uploads/<brCode>/files/<type>/`; Telegram handle kept only as an optional fallback for oversized files
