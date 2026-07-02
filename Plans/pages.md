@@ -9,7 +9,7 @@
 | `GET /hire/success` | Post-submit | Shown to guests after submitting; offers inline account creation to track the booking going forward |
 | `POST /hire/coupon/validate` | — | AJAX coupon validation for the `/hire` form |
 | `POST /signup` | — | Inline signup from `/hire/success` — creates a `User`, links the just-submitted booking via `crCode`, logs in |
-| `/track` | Project Tracker | Look up a booking by BR code or name + email combo |
+| `/track` | Project Tracker | Look up a booking by BR code or name + email combo; shows deposit due date notice while `depositStatus` is `pending`, and estimated delivery date once admin sets it |
 | `/login` | Client Login | Existing client login; supports `?next=` redirect and `?cr=` to link a just-submitted booking on login |
 
 ## Authenticated (client login required)
@@ -18,8 +18,9 @@
 |-------|------|---------|
 | `/dashboard` | Client Dashboard | All submitted requests, statuses, payment progress |
 | `/dashboard/new` | New Project | Gated on profile completeness (name + location) before letting a client start a fresh `/hire` submission |
-| `/dashboard/booking/:id` | Booking Detail | Full detail of one request; client can submit revision requests |
+| `/dashboard/booking/:id` | Booking Detail | Full detail of one request; client can submit revision requests, delete the project |
 | `POST /dashboard/booking/:id/revision` | — | Client submits a revision request message on their booking |
+| `POST /dashboard/booking/:id/delete` | — | Client hard-delete: permanently removes the booking's `files/` folder via `hardDeleteBookingFiles()`, clears `uploadedFiles`, sets `filesDeleted: true`; DB row and `booking.txt` are kept |
 | `/dashboard/gallery` | File Gallery | Browse uploaded files across all of the client's projects, sortable newest/oldest |
 | `GET /dashboard/uploads/:filename` | — | Protected file serving for the owning client only |
 | `/dashboard/notifications` | Notifications | In-app alerts (status changes, invoices sent, payments confirmed, project dismissed); marks all read on view |
@@ -33,13 +34,18 @@
 | Route | Page | Purpose |
 |-------|------|---------|
 | `/admin/login` / `/admin/logout` | — | Single shared admin password (`ADMIN_PASSWORD` env var), session-based |
-| `/admin` | Admin Dashboard | Non-archived bookings with live search and status filter pills, total/pending counts |
-| `/admin/booking/:id` | Booking Detail | Full booking info, status picker, payment card, media links, revision list (mark reviewed) |
+| `/admin` | Admin Dashboard | Active/Archived tab (`?view=archived`) bookings with live search and status filter pills, total/pending counts |
+| `/admin/booking/:id` | Booking Detail | Full booking info, status picker, admin notes, payment card (deposit due date, delivery date once paid), media links, revision list (mark reviewed) |
 | `POST /admin/booking/:id/status` | — | Update booking status + create client notification (special-cased message for `declined`) |
-| `POST /admin/booking/:id/send-deposit` | — | Create/reuse Stripe customer, send 30% deposit invoice, flips status to `accepted`, sends acceptance email |
+| `POST /admin/booking/:id/notes` | — | Append an admin note (`adminNotes` array, admin-only, not client-visible) |
+| `POST /admin/booking/:id/notes/:noteId/edit` | — | Edit the text of an existing admin note |
+| `POST /admin/booking/:id/notes/:noteId/delete` | — | Remove an admin note |
+| `POST /admin/booking/:id/send-deposit` | — | Create/reuse Stripe customer, send 30% deposit invoice with an admin-set due date (`due_date`), flips status to `accepted`, sends acceptance email |
+| `POST /admin/booking/:id/deposit-due-date` | — | Update (or clear) the deposit due date while `depositStatus === "pending"` |
+| `POST /admin/booking/:id/delivery-date` | — | Set/clear the estimated delivery date, only allowed once `depositStatus === "paid"` |
 | `POST /admin/booking/:id/send-final` | — | Send 70% final invoice once deposit is paid |
-| `POST /admin/booking/:id/delete` | — | Soft-delete: sets `archived: true`, moves the booking's upload folder to `uploads/_archive/`, notifies client |
-| `POST /admin/bookings/bulk-delete` | — | Same archive behavior across multiple selected bookings |
+| `POST /admin/booking/:id/archive` / `POST /admin/bookings/bulk-archive` | — | Archive: sets `archived: true`, moves the booking's upload folder to `uploads/_archive/`, notifies client |
+| `POST /admin/booking/:id/restore` | — | Un-archives a booking and moves its folder back out of `uploads/_archive/` |
 | `POST /admin/booking/:id/revision/:revId/reviewed` | — | Marks a single client revision request as reviewed |
 | `GET /admin/uploads/:filename` | — | Protected file serving (checks active and `_archive` paths); images inline, video/audio in-browser, download for all |
 | `/admin/coupons` | Coupon Manager | List/create/toggle-active/delete coupon codes (percent or fixed discount, optional expiry) |
@@ -54,17 +60,26 @@ Landing (#pricing) → /hire → Submit request (guest or logged-in client)
         → /hire/success (optional inline signup,    → /dashboard?submitted=<crCode>
           links booking to new account)                (booking auto-linked to account)
                        ↓
-           Admin reviews in /admin → sets price → sends 30% deposit invoice via Stripe
+           Admin reviews in /admin → sets price + deposit due date → sends 30% deposit invoice via Stripe
            (status → accepted, acceptance email sent)
                        ↓
-           Client pays deposit (Stripe webhook) → status → in-progress
+           Client pays deposit before due date (Stripe webhook) → status → in-progress,
+           admin can now set a delivery date (shown on /track)
+             — if unpaid past the due date, an hourly job (lib/invoiceExpiry.js) auto-declines
+               the booking, voids the invoice, and emails client + admin instead
                        ↓
            Admin does the work → client may request revisions from /dashboard/booking/:id
                        ↓
-           Admin sends 70% final invoice via Stripe
+           Admin sets a final due date → sends 70% final invoice via Stripe
+             — if unpaid past that date, the same hourly job voids the invoice, resets
+               finalPaymentStatus so a fresh one can be sent, and emails client + admin
+               (status is left alone — project isn't declined, just unpaid)
                        ↓
            Client pays final (Stripe webhook) → status → completed
                        ↓
            Client tracks progress any time via /track (BR code or name + email),
            or via /dashboard if they have an account
+                       ↓
+           Admin may archive a booking (unclutters /admin, files moved to _archive/,
+           restorable) — separate from a client permanently deleting their own files
 ```

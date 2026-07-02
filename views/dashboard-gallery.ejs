@@ -81,24 +81,21 @@
       display: flex; align-items: center; justify-content: center;
     }
 
-    /* Level 2 — file strip overlaid at the bottom */
+    /* Level 2 — file strip floating over the bottom of the square */
     .card-l2 {
       position: absolute;
-      bottom: 0; left: 0; right: 0;
-      height: 52px;
-      background: rgba(0,0,0,0.72);
-      backdrop-filter: blur(6px);
-      border-top: 1px solid rgba(255,255,255,0.08);
+      left: 0; right: 0; bottom: 0;
+      height: 64px;
+      padding: 0 10px 10px;
       display: flex;
       align-items: center;
-      gap: 4px;
-      padding: 0 8px;
+      gap: 6px;
       overflow: hidden;
     }
     .l2-thumb {
       flex-shrink: 0;
-      width: 36px; height: 36px;
-      border-radius: 4px;
+      width: 48px; height: 48px;
+      border-radius: 6px;
       overflow: hidden;
       background: rgba(255,255,255,0.08);
       border: 1px solid rgba(255,255,255,0.1);
@@ -107,8 +104,12 @@
     .l2-thumb img, .l2-thumb video {
       width: 100%; height: 100%; object-fit: cover; display: block;
     }
+    .l2-thumb-audio {
+      background: rgba(255,255,255,0.18);
+      border-color: rgba(255,255,255,0.22);
+    }
     .l2-more {
-      font-size: 10px; color: rgba(255,255,255,0.5); white-space: nowrap;
+      font-size: 11px; color: rgba(255,255,255,0.55); white-space: nowrap;
       flex-shrink: 0; margin-left: 2px;
     }
 
@@ -350,15 +351,15 @@
               const isAud = /^audio\//i.test(f.mimetype);
               const url = '/dashboard/uploads/' + f.storedName;
             %>
-            <div class="l2-thumb">
+            <div class="l2-thumb<%= isAud ? ' l2-thumb-audio' : '' %>">
               <% if (isImg) { %>
               <img src="<%= url %>" alt="" />
               <% } else if (isVid) { %>
               <video src="<%= url %>" muted preload="auto" class="gallery-thumb-vid"></video>
               <% } else if (isAud) { %>
-              <iconify-icon icon="material-symbols-light:music-note-2" width="13" height="13" style="color:#f59e0b;"></iconify-icon>
+              <iconify-icon icon="material-symbols-light:music-note-2" width="20" height="20" style="color:#f59e0b;"></iconify-icon>
               <% } else { %>
-              <iconify-icon icon="material-symbols-light:attach-file" width="13" height="13" style="color:#6b7280;"></iconify-icon>
+              <iconify-icon icon="material-symbols-light:attach-file" width="20" height="20" style="color:#6b7280;"></iconify-icon>
               <% } %>
             </div>
             <% }) %>

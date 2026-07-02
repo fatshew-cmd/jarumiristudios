@@ -9,8 +9,8 @@ const BookingRequest = require("./models/BookingRequest");
 const User = require("./models/User");
 const Coupon = require("./models/Coupon");
 const Notification = require("./models/Notification");
-const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert } = require("./lib/mailer");
-const { startDepositExpiryJob } = require("./lib/depositExpiry");
+const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert, sendAdminPauseAlert, sendAdminNudgeAlert, sendAdminUnexpectedPaymentAlert } = require("./lib/mailer");
+const { startInvoiceExpiryJob } = require("./lib/invoiceExpiry");
 
 function endOfDay(dateStr) {
   if (!dateStr) return null;
@@ -25,6 +25,7 @@ const STATUS_LABELS = {
   declined: "Declined",
   "in-progress": "In Progress",
   completed: "Completed",
+  paused: "Paused",
 };
 
 dotenv.config();
@@ -56,23 +57,36 @@ app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (r
       if (crCode) {
         const booking = await BookingRequest.findOne({ crCode });
         if (booking) {
+          const isInactive = booking.archived || booking.status === "declined" || booking.status === "paused";
           let notifMsg = null;
           let paymentType = null;
           if (invoice.id === booking.depositInvoiceId) {
             booking.depositStatus = "paid";
-            booking.status = "in-progress";
-            notifMsg = `Deposit payment confirmed for project ${booking.crCode}. Work has begun!`;
             paymentType = "deposit";
+            if (isInactive) {
+              notifMsg = `We received your deposit payment for project ${booking.crCode}. We'll follow up shortly to confirm next steps.`;
+            } else {
+              booking.status = "in-progress";
+              notifMsg = `Deposit payment confirmed for project ${booking.crCode}. Work has begun!`;
+            }
           } else if (invoice.id === booking.finalInvoiceId) {
             booking.finalPaymentStatus = "paid";
-            booking.status = "completed";
-            notifMsg = `Final payment confirmed for project ${booking.crCode}. Your project is complete!`;
             paymentType = "final";
+            if (isInactive) {
+              notifMsg = `We received your final payment for project ${booking.crCode}. We'll follow up shortly to confirm next steps.`;
+            } else {
+              booking.status = "completed";
+              notifMsg = `Final payment confirmed for project ${booking.crCode}. Your project is complete!`;
+            }
           }
           await booking.save();
           if (paymentType) {
             const paidAmount = (invoice.amount_paid / 100);
-            sendAdminPaymentAlert(booking, paymentType, paidAmount);
+            if (isInactive) {
+              sendAdminUnexpectedPaymentAlert(booking, paymentType, paidAmount);
+            } else {
+              sendAdminPaymentAlert(booking, paymentType, paidAmount);
+            }
           }
           if (notifMsg && booking.clientId) {
             await Notification.create({
@@ -120,7 +134,7 @@ mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("MongoDB connected");
-    startDepositExpiryJob(stripe);
+    startInvoiceExpiryJob(stripe);
   })
   .catch((err) => console.error("MongoDB error:", err));
 
@@ -593,6 +607,34 @@ app.post("/dashboard/booking/:id/delete", requireClient, async (req, res) => {
   res.redirect("/dashboard");
 });
 
+app.post("/dashboard/booking/:id/pause", requireClient, async (req, res) => {
+  const booking = await BookingRequest.findOneAndUpdate(
+    {
+      _id: req.params.id,
+      clientId: req.session.userId,
+      archived: { $ne: true },
+      status: { $nin: ["declined", "completed", "paused"] },
+    },
+    { status: "paused" },
+    { new: true }
+  );
+  if (!booking) return res.sendStatus(404);
+  sendAdminPauseAlert(booking);
+  res.sendStatus(200);
+});
+
+app.post("/dashboard/booking/:id/nudge", requireClient, async (req, res) => {
+  const booking = await BookingRequest.findOne({
+    _id: req.params.id,
+    clientId: req.session.userId,
+    archived: { $ne: true },
+    status: { $nin: ["declined", "completed"] },
+  });
+  if (!booking) return res.sendStatus(404);
+  sendAdminNudgeAlert(booking);
+  res.sendStatus(200);
+});
+
 app.post("/dashboard/booking/:id/revision", requireClient, async (req, res) => {
   const { message } = req.body;
   if (!message?.trim()) return res.redirect(`/dashboard/booking/${req.params.id}`);
@@ -786,11 +828,16 @@ app.post("/admin/booking/:id/send-final", requireAdmin, async (req, res) => {
     return res.redirect(`/admin/booking/${req.params.id}`);
   }
 
+  const finalDueDate = endOfDay(req.body.dueDate);
+  if (!finalDueDate || finalDueDate <= new Date()) {
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent("Final due date must be a valid future date.")}`);
+  }
+
   try {
     const invoice = await stripe.invoices.create({
       customer: booking.stripeCustomerId,
       collection_method: "send_invoice",
-      days_until_due: 7,
+      due_date: Math.floor(finalDueDate.getTime() / 1000),
       currency: "usd",
       metadata: { crCode: booking.crCode },
     });
@@ -808,6 +855,7 @@ app.post("/admin/booking/:id/send-final", requireAdmin, async (req, res) => {
 
     booking.finalInvoiceId = invoice.id;
     booking.finalPaymentStatus = "pending";
+    booking.finalDueDate = finalDueDate;
     await booking.save();
 
     sendAdminInvoiceAlert(booking, "final", booking.agreedPrice * 0.70, finalized.hosted_invoice_url);
@@ -826,6 +874,20 @@ app.post("/admin/booking/:id/send-final", requireAdmin, async (req, res) => {
     return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
   }
 
+  res.redirect(`/admin/booking/${req.params.id}`);
+});
+
+app.post("/admin/booking/:id/final-due-date", requireAdmin, async (req, res) => {
+  const booking = await BookingRequest.findById(req.params.id);
+  if (!booking || booking.finalPaymentStatus !== "pending") return res.redirect(`/admin/booking/${req.params.id}`);
+
+  const finalDueDate = endOfDay(req.body.dueDate);
+  if (!finalDueDate || finalDueDate <= new Date()) {
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent("Final due date must be a valid future date.")}`);
+  }
+
+  booking.finalDueDate = finalDueDate;
+  await booking.save();
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 

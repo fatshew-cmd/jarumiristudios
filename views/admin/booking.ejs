@@ -40,6 +40,7 @@
     .status-btn.active.s-declined   { background: rgba(239,68,68,0.15);   color: #f87171; border-color: rgba(239,68,68,0.3); }
     .status-btn.active.s-in-progress { background: rgba(59,130,246,0.15); color: #60a5fa; border-color: rgba(59,130,246,0.3); }
     .status-btn.active.s-completed  { background: rgba(16,185,129,0.15);  color: #34d399; border-color: rgba(16,185,129,0.3); }
+    .status-btn.active.s-paused     { background: rgba(167,139,250,0.15); color: #a78bfa; border-color: rgba(167,139,250,0.3); }
   </style>
 </head>
 <body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
@@ -82,7 +83,7 @@
       <div class="card p-4! flex flex-col gap-3 min-w-[220px]">
         <p class="detail-label">Status</p>
         <div class="flex flex-wrap gap-2">
-          <% ['pending','in-review','accepted','declined','in-progress','completed'].forEach(s => { %>
+          <% ['pending','in-review','accepted','declined','in-progress','paused','completed'].forEach(s => { %>
           <form action="/admin/booking/<%= booking._id %>/status" method="POST" style="display:inline;">
             <input type="hidden" name="status" value="<%= s %>" />
             <button type="submit"
@@ -420,7 +421,16 @@
               <p class="text-xs text-gray-500 mt-0.5">$<%= (booking.agreedPrice * 0.30).toFixed(2) %> paid</p>
             </div>
           </div>
-          <form action="/admin/booking/<%= booking._id %>/send-final" method="POST">
+          <form action="/admin/booking/<%= booking._id %>/send-final" method="POST" class="space-y-3">
+            <div>
+              <label class="detail-label block mb-1">Final due date</label>
+              <%
+                const _defaultFinalDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+              %>
+              <input type="date" name="dueDate" required value="<%= _defaultFinalDueDate %>"
+                class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
+              <p class="text-xs text-gray-600 mt-1">Unpaid final invoice past this date is voided automatically.</p>
+            </div>
             <button type="submit"
               class="w-full px-4 py-2.5 rounded-full bg-green-500 hover:bg-green-400 text-black text-sm font-semibold transition-colors">
               Send Final Invoice (70%)
@@ -428,7 +438,7 @@
           </form>
 
           <% } else if (booking.finalPaymentStatus === 'pending') { %>
-          <div class="space-y-2.5">
+          <div class="space-y-2.5 mb-4">
             <div class="flex items-start gap-2.5">
               <div class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></div>
               <div>
@@ -441,9 +451,21 @@
               <div>
                 <p class="text-sm text-white font-medium">Final invoice sent</p>
                 <p class="text-xs text-gray-500 mt-0.5">Awaiting client payment ($<%= (booking.agreedPrice * 0.70).toFixed(2) %>)</p>
+                <% if (booking.finalDueDate) { %>
+                <p class="text-xs text-amber-400 mt-0.5">Due by <%= new Date(booking.finalDueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %> — voided if unpaid</p>
+                <% } %>
               </div>
             </div>
           </div>
+          <form action="/admin/booking/<%= booking._id %>/final-due-date" method="POST" class="flex items-center gap-2">
+            <input type="date" name="dueDate"
+              <% if (booking.finalDueDate) { %>value="<%= new Date(booking.finalDueDate).toISOString().slice(0, 10) %>"<% } %>
+              class="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
+            <button type="submit"
+              class="px-3 py-2 rounded-md border border-white/10 text-xs text-gray-400 hover:text-white hover:border-white/25 transition-colors shrink-0">
+              Update
+            </button>
+          </form>
 
           <% } else if (booking.finalPaymentStatus === 'paid') { %>
           <div class="space-y-2.5">

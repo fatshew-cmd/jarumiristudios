@@ -58,6 +58,8 @@
     .s-accepted .status-dot  { background: #4ade80; }
     .s-declined  { background: rgba(239,68,68,0.12);   color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
     .s-declined .status-dot  { background: #f87171; }
+    .s-paused    { background: rgba(167,139,250,0.12); color: #a78bfa; border: 1px solid rgba(167,139,250,0.25); }
+    .s-paused .status-dot    { background: #a78bfa; }
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50%       { opacity: 0.4; }
@@ -237,6 +239,12 @@
             <div class="pt-4 mt-4 border-t border-white/5">
               <p class="text-amber-400 text-sm font-medium mb-1">Deposit due by <%= new Date(booking.depositDueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %></p>
               <p class="text-gray-500 text-sm">Pay the deposit invoice sent to your email to begin your project.</p>
+            </div>
+            <% } %>
+            <% if (booking.finalPaymentStatus === 'pending' && booking.finalDueDate) { %>
+            <div class="pt-4 mt-4 border-t border-white/5">
+              <p class="text-amber-400 text-sm font-medium mb-1">Final payment due by <%= new Date(booking.finalDueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %></p>
+              <p class="text-gray-500 text-sm">Pay the final invoice sent to your email to complete your project. The link is voided if it passes unpaid.</p>
             </div>
             <% } %>
             <% } %>

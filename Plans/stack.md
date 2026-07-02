@@ -21,11 +21,16 @@
 ## Payments
 - **Stripe** (no monthly fee — % per transaction only)
 - Flow: **Stripe Invoices** (not Payment Links) — two invoices per project
-  1. Admin accepts booking + sets agreed price → server creates Stripe customer + sends 30% deposit invoice
-  2. Client pays → webhook fires `invoice.payment_succeeded` → booking moves to `in-progress`
+  1. Admin accepts booking + sets agreed price and a deposit due date → server creates Stripe customer + sends 30% deposit invoice with that `due_date`
+  2. Client pays → webhook fires `invoice.payment_succeeded` → booking moves to `in-progress`; admin can now set a delivery date
   3. Work delivered → admin sends 70% final invoice
   4. Client pays → webhook fires again → booking moves to `completed`
 - Invoices chosen over Payment Links for: formal paper trail, line items, auto-reminders, professional appearance
+- **Invoice expiry job** (`lib/invoiceExpiry.js`, renamed from `depositExpiry.js`) — in-process `setInterval`, runs hourly, no external cron dependency; two checks:
+  - Deposit: auto-declines any `status: accepted` / `depositStatus: pending` booking whose `depositDueDate` has passed, voids the Stripe deposit invoice, and emails client + admin.
+  - Final: voids the Stripe final invoice for any `finalPaymentStatus: pending` booking whose `finalDueDate` has passed, resets `finalPaymentStatus`/`finalInvoiceId`/`finalDueDate` so admin can send a fresh invoice, and emails client + admin. Does not touch `status` (project stays wherever it was, e.g. `in-progress`).
+  Started from the `mongoose.connect().then()` callback in `server.js` so it only runs once the DB connection is live.
+- **Stale-payment guard on the webhook** — `invoice.payment_succeeded` no longer blindly auto-progresses `status`. If the booking is `archived`, `declined`, or `paused` when a payment lands (e.g. an invoice that was still live when the project's state changed underneath it), the payment is still recorded (`depositStatus`/`finalPaymentStatus` → `paid`) but `status` is left alone and admin gets a distinct "payment on inactive project" alert (`sendAdminUnexpectedPaymentAlert`) instead of the normal one — so a stale-but-not-yet-expired link can't silently resurrect/complete a project nobody's tracking anymore.
 
 ## File Delivery
 - Direct upload via `multer` on `/hire` — up to 250MB per file, 20 files per submission, stored on the Railway server disk under `uploads/<brCode>/files/<video|audio|image|other>/`
@@ -35,7 +40,7 @@
 
 ## Email
 - **Nodemailer** via Gmail SMTP (`PERSONAL_GMAIL` + app password)
-- Transactional emails: booking confirmation (client), new booking alert (admin), acceptance email (client, sent alongside the deposit invoice), invoice-sent alert (admin), payment-confirmed alert (admin)
+- Transactional emails: booking confirmation (client), new booking alert (admin), acceptance email (client, sent alongside the deposit invoice), invoice-sent alert (admin), payment-confirmed alert (admin), deposit-expired notice (client) + auto-decline alert (admin) from the deposit expiry job
 
 ## In-app Notifications
 - `Notification` model (Mongoose) — one doc per event (`status_change`, `invoice_sent`, `payment_confirmed`, `project_dismissed`), tied to a `userId` + `bookingId`

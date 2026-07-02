@@ -7,7 +7,7 @@ const notificationSchema = new mongoose.Schema(
     crCode: { type: String },
     type: {
       type: String,
-      enum: ["status_change", "invoice_sent", "payment_confirmed", "project_dismissed"],
+      enum: ["status_change", "invoice_sent", "payment_confirmed", "project_dismissed", "invoice_expired"],
       required: true,
     },
     message: { type: String, required: true },

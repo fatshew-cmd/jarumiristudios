@@ -39,6 +39,7 @@
     .status-in-progress { background: rgba(59,130,246,0.1);  color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
     .status-completed   { background: rgba(16,185,129,0.1);  color: #34d399; border: 1px solid rgba(16,185,129,0.2); }
     .status-archived    { background: rgba(107,114,128,0.1); color: #9ca3af; border: 1px solid rgba(107,114,128,0.2); }
+    .status-paused       { background: rgba(167,139,250,0.1); color: #a78bfa; border: 1px solid rgba(167,139,250,0.2); }
 
     .stat-card {
       background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.07);
@@ -307,7 +308,7 @@
               const fmtMoney = (v) => v != null ? '$' + v.toFixed(2) : '—';
               const canManage = !b.archived && b.status !== 'declined' && b.status !== 'completed';
             %>
-            <tr data-id="<%= b._id %>" data-crcode="<%= b.crCode %>" data-manageable="<%= canManage %>" onclick="window.location='/dashboard/booking/<%= b._id %>'" style="cursor:pointer;">
+            <tr data-id="<%= b._id %>" data-crcode="<%= b.crCode %>" data-manageable="<%= canManage %>" data-status="<%= b.status %>" onclick="window.location='/dashboard/booking/<%= b._id %>'" style="cursor:pointer;">
               <!-- Checkbox -->
               <td class="row-cb">
                 <iconify-icon icon="material-symbols-light:check-box-outline-blank" width="20" height="20" class="cb-icon" onclick="event.stopPropagation(); clientToggleRow(this, '<%= b._id %>')"></iconify-icon>
@@ -367,10 +368,12 @@
                   <button class="cta-btn danger" title="Delete project" onclick="event.stopPropagation(); deleteProject('<%= b._id %>', '<%= b.crCode %>')">
                     <iconify-icon icon="material-symbols-light:delete" width="20" height="20"></iconify-icon>
                   </button>
-                  <% if (canManage) { %>
+                  <% if (canManage && b.status !== 'paused') { %>
                   <button class="cta-btn warn" title="Pause project" onclick="event.stopPropagation(); pauseProject('<%= b._id %>', '<%= b.crCode %>')">
                     <iconify-icon icon="material-symbols-light:pause-circle" width="20" height="20"></iconify-icon>
                   </button>
+                  <% } %>
+                  <% if (canManage) { %>
                   <button class="cta-btn info" title="Nudge admin" onclick="event.stopPropagation(); nudgeAdmin('<%= b._id %>', '<%= b.crCode %>')">
                     <iconify-icon icon="material-symbols-light:notifications-active" width="20" height="20"></iconify-icon>
                   </button>
@@ -507,7 +510,9 @@
     }
 
     function bulkPause() {
-      const ids = manageableIds([...clientChecked]);
+      const ids = manageableIds([...clientChecked]).filter(id =>
+        document.querySelector(`tr[data-id="${id}"]`)?.dataset.status !== 'paused'
+      );
       if (!ids.length) return;
       Promise.all(ids.map(id =>
         fetch(`/dashboard/booking/${id}/pause`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })

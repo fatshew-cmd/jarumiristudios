@@ -31,7 +31,7 @@ const bookingRequestSchema = new mongoose.Schema(
     ],
     status: {
       type: String,
-      enum: ["pending", "in-review", "accepted", "declined", "in-progress", "completed"],
+      enum: ["pending", "in-review", "accepted", "declined", "in-progress", "completed", "paused"],
       default: "pending",
     },
     agreedPrice: { type: Number },
@@ -41,6 +41,7 @@ const bookingRequestSchema = new mongoose.Schema(
     depositStatus: { type: String, enum: ["none", "pending", "paid"], default: "none" },
     finalPaymentStatus: { type: String, enum: ["none", "pending", "paid"], default: "none" },
     depositDueDate: { type: Date },
+    finalDueDate: { type: Date },
     deliveryDate: { type: Date },
     couponCode: { type: String },
     discountAmount: { type: Number, default: 0 },
