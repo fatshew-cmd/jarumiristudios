@@ -19,7 +19,7 @@ const bookingRequestSchema = new mongoose.Schema(
     },
     addOns: [{ type: String }],
     budget: { type: String, trim: true },
-    projectBrief: { type: String, required: true, trim: true },
+    projectBrief: { type: String, required: true, trim: true, maxlength: 2000 },
     mediaLinks: [{ type: String, trim: true }],
     uploadedFiles: [
       {
@@ -38,10 +38,14 @@ const bookingRequestSchema = new mongoose.Schema(
     stripeCustomerId: { type: String },
     depositInvoiceId: { type: String },
     finalInvoiceId: { type: String },
+    depositInvoiceUrl: { type: String },
+    finalInvoiceUrl: { type: String },
     depositStatus: { type: String, enum: ["none", "pending", "paid"], default: "none" },
     finalPaymentStatus: { type: String, enum: ["none", "pending", "paid"], default: "none" },
     depositDueDate: { type: Date },
     finalDueDate: { type: Date },
+    depositReminderSent: { type: Boolean, default: false },
+    finalReminderSent: { type: Boolean, default: false },
     deliveryDate: { type: Date },
     couponCode: { type: String },
     discountAmount: { type: Number, default: 0 },

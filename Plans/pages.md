@@ -20,7 +20,9 @@
 | `/dashboard/new` | New Project | Gated on profile completeness (name + location) before letting a client start a fresh `/hire` submission |
 | `/dashboard/booking/:id` | Booking Detail | Full detail of one request; client can submit revision requests, delete the project |
 | `POST /dashboard/booking/:id/revision` | — | Client submits a revision request message on their booking |
-| `POST /dashboard/booking/:id/delete` | — | Client hard-delete: permanently removes the booking's `files/` folder via `hardDeleteBookingFiles()`, clears `uploadedFiles`, sets `filesDeleted: true`; DB row and `booking.txt` are kept |
+| `POST /dashboard/booking/:id/pause` | — | Client pauses their project (`status: "paused"`); emails admin via `sendAdminPauseAlert`; blocked once already declined/completed/paused/archived |
+| `POST /dashboard/booking/:id/nudge` | — | Client asks for an update; creates an `AdminNotification` (`type: "nudge"`) instead of emailing; rate-limited to 3 per booking per rolling hour (`429` JSON error past that) |
+| `POST /dashboard/booking/:id/delete` | — | Client hard-delete: permanently removes the booking's `files/` folder via `hardDeleteBookingFiles()`, clears `uploadedFiles`, sets `filesDeleted: true` and `archived: true` (also moves the now-empty booking folder into `uploads/_archive/`); DB row and `booking.txt` are kept |
 | `/dashboard/gallery` | File Gallery | Browse uploaded files across all of the client's projects, sortable newest/oldest |
 | `GET /dashboard/uploads/:filename` | — | Protected file serving for the owning client only |
 | `/dashboard/notifications` | Notifications | In-app alerts (status changes, invoices sent, payments confirmed, project dismissed); marks all read on view |
@@ -34,6 +36,9 @@
 | Route | Page | Purpose |
 |-------|------|---------|
 | `/admin/login` / `/admin/logout` | — | Single shared admin password (`ADMIN_PASSWORD` env var), session-based |
+| `/admin/notifications` | Admin Notifications | Latest 200 `AdminNotification` records (currently nudges only); marks all read on view; bell badge + 15s poll + toast on every other admin page via `_notif-poll.ejs` partial |
+| `GET /api/admin/notifications/poll` | — | Polling endpoint for live unread badge + new items since a timestamp (`?since=<ms>`) |
+| `POST /api/admin/notifications/mark-read` | — | Marks all admin notifications read (JSON response) |
 | `/admin` | Admin Dashboard | Active/Archived tab (`?view=archived`) bookings with live search and status filter pills, total/pending counts |
 | `/admin/booking/:id` | Booking Detail | Full booking info, status picker, admin notes, payment card (deposit due date, delivery date once paid), media links, revision list (mark reviewed) |
 | `POST /admin/booking/:id/status` | — | Update booking status + create client notification (special-cased message for `declined`) |

@@ -13,7 +13,7 @@
 
 ## Authentication
 - `bcrypt` for password hashing
-- `express-session` for session management
+- `express-session` for session management, backed by `connect-mongo` (`MongoStore`) instead of the default in-memory store — sessions survive server restarts/redeploys
 - No third-party auth providers
 - Two separate session flags: `req.session.isAdmin` (single shared password via `ADMIN_PASSWORD` env var, gates `/admin/*`) and `req.session.userId` (per-client `User` account, gates `/dashboard/*`)
 - Client accounts are optional — bookings can be submitted as a guest via `/hire` and tracked via `/track`; an account just links bookings to a persistent dashboard
@@ -41,11 +41,17 @@
 ## Email
 - **Nodemailer** via Gmail SMTP (`PERSONAL_GMAIL` + app password)
 - Transactional emails: booking confirmation (client), new booking alert (admin), acceptance email (client, sent alongside the deposit invoice), invoice-sent alert (admin), payment-confirmed alert (admin), deposit-expired notice (client) + auto-decline alert (admin) from the deposit expiry job
+- Client "nudge admin" no longer sends an email (see In-app Notifications (Admin) below) — `sendAdminNudgeAlert` was removed from `lib/mailer.js`
 
-## In-app Notifications
+## In-app Notifications (Client)
 - `Notification` model (Mongoose) — one doc per event (`status_change`, `invoice_sent`, `payment_confirmed`, `project_dismissed`), tied to a `userId` + `bookingId`
 - Only created for bookings linked to a client account (`clientId` set) — guest-only bookings rely on email instead
 - `/dashboard/notifications` page + lightweight polling endpoint (`/api/notifications/poll`) for a live unread badge
+
+## In-app Notifications (Admin)
+- `AdminNotification` model (Mongoose) — one doc per event (`type` enum, currently only `"nudge"`), `bookingId`, `crCode`, `message`, `read`
+- Replaces the old email-based nudge alert: `POST /dashboard/booking/:id/nudge` creates an `AdminNotification` instead of emailing; rate-limited to 3 per booking per rolling hour (`429` past that)
+- `/admin/notifications` page (marks all read on view) + `/api/admin/notifications/poll` for a bell badge that polls every 15s and toasts new nudges; wired into every admin view via a shared `views/admin/_notif-poll.ejs` partial and an `app.use("/admin", ...)` middleware that injects `res.locals.adminUnreadCount`
 
 ## Coupons
 - `Coupon` model — code, `discountType` (percent/fixed), `discountValue`, optional `expiresAt`, `active` flag

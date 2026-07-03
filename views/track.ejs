@@ -238,13 +238,25 @@
             <% if (booking.status === 'accepted' && booking.depositStatus === 'pending' && booking.depositDueDate) { %>
             <div class="pt-4 mt-4 border-t border-white/5">
               <p class="text-amber-400 text-sm font-medium mb-1">Deposit due by <%= new Date(booking.depositDueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %></p>
-              <p class="text-gray-500 text-sm">Pay the deposit invoice sent to your email to begin your project.</p>
+              <p class="text-gray-500 text-sm mb-3">Pay the deposit invoice sent to your email to begin your project.</p>
+              <% if (booking.depositInvoiceUrl) { %>
+              <a href="<%= booking.depositInvoiceUrl %>" target="_blank" rel="noopener"
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
+                Pay deposit now
+              </a>
+              <% } %>
             </div>
             <% } %>
             <% if (booking.finalPaymentStatus === 'pending' && booking.finalDueDate) { %>
             <div class="pt-4 mt-4 border-t border-white/5">
               <p class="text-amber-400 text-sm font-medium mb-1">Final payment due by <%= new Date(booking.finalDueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %></p>
-              <p class="text-gray-500 text-sm">Pay the final invoice sent to your email to complete your project. The link is voided if it passes unpaid.</p>
+              <p class="text-gray-500 text-sm mb-3">Pay the final invoice sent to your email to complete your project. The link is voided if it passes unpaid.</p>
+              <% if (booking.finalInvoiceUrl) { %>
+              <a href="<%= booking.finalInvoiceUrl %>" target="_blank" rel="noopener"
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
+                Pay final invoice now
+              </a>
+              <% } %>
             </div>
             <% } %>
             <% } %>

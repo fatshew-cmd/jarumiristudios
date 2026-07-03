@@ -386,11 +386,12 @@
               <label class="detail-label block mb-1">Deposit due date</label>
               <%
                 const _defaultDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                const _minDueDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
               %>
-              <input type="date" name="dueDate" required value="<%= _defaultDueDate %>"
+              <input type="date" name="dueDate" required value="<%= _defaultDueDate %>" min="<%= _minDueDate %>"
                 <% if (!canSendDeposit) { %>disabled<% } %>
                 class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50 disabled:opacity-40 disabled:cursor-not-allowed" />
-              <p class="text-xs text-gray-600 mt-1">Unpaid deposit past this date auto-declines the project.</p>
+              <p class="text-xs text-gray-600 mt-1">Unpaid deposit past this date auto-declines the project. Must be at least 3 days out.</p>
             </div>
             <button id="deposit-submit-btn" type="submit" disabled
               class="w-full px-4 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-300 disabled:hover:bg-amber-400">
@@ -413,11 +414,13 @@
             </div>
           </div>
           <form action="/admin/booking/<%= booking._id %>/deposit-due-date" method="POST" class="flex items-center gap-2">
-            <input type="date" name="dueDate"
-              <% if (booking.depositDueDate) { %>value="<%= new Date(booking.depositDueDate).toISOString().slice(0, 10) %>"<% } %>
+            <% const _minDepositEditDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10); %>
+            <input type="date" name="dueDate" min="<%= _minDepositEditDate %>"
+              <% if (booking.depositDueDate) { %>value="<%= new Date(booking.depositDueDate).toISOString().slice(0, 10) %>" data-initial="<%= new Date(booking.depositDueDate).toISOString().slice(0, 10) %>"<% } %>
+              oninput="document.getElementById('deposit-due-btn').disabled = !this.value || this.value === this.dataset.initial"
               class="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
-            <button type="submit"
-              class="px-3 py-2 rounded-md border border-white/10 text-xs text-gray-400 hover:text-white hover:border-white/25 transition-colors shrink-0">
+            <button type="submit" id="deposit-due-btn" disabled
+              class="px-3 py-2 rounded-md border border-white/10 text-xs text-gray-400 hover:text-white hover:border-white/25 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-400 disabled:hover:border-white/10">
               Update
             </button>
           </form>
@@ -435,10 +438,11 @@
               <label class="detail-label block mb-1">Final due date</label>
               <%
                 const _defaultFinalDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                const _minFinalDueDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
               %>
-              <input type="date" name="dueDate" required value="<%= _defaultFinalDueDate %>"
+              <input type="date" name="dueDate" required value="<%= _defaultFinalDueDate %>" min="<%= _minFinalDueDate %>"
                 class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
-              <p class="text-xs text-gray-600 mt-1">Unpaid final invoice past this date is voided automatically.</p>
+              <p class="text-xs text-gray-600 mt-1">Unpaid final invoice past this date is voided automatically. Must be at least 3 days out.</p>
             </div>
             <button type="submit"
               class="w-full px-4 py-2.5 rounded-full bg-green-500 hover:bg-green-400 text-black text-sm font-semibold transition-colors">
@@ -467,11 +471,13 @@
             </div>
           </div>
           <form action="/admin/booking/<%= booking._id %>/final-due-date" method="POST" class="flex items-center gap-2">
-            <input type="date" name="dueDate"
-              <% if (booking.finalDueDate) { %>value="<%= new Date(booking.finalDueDate).toISOString().slice(0, 10) %>"<% } %>
+            <% const _minFinalEditDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10); %>
+            <input type="date" name="dueDate" min="<%= _minFinalEditDate %>"
+              <% if (booking.finalDueDate) { %>value="<%= new Date(booking.finalDueDate).toISOString().slice(0, 10) %>" data-initial="<%= new Date(booking.finalDueDate).toISOString().slice(0, 10) %>"<% } %>
+              oninput="document.getElementById('final-due-btn').disabled = !this.value || this.value === this.dataset.initial"
               class="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
-            <button type="submit"
-              class="px-3 py-2 rounded-md border border-white/10 text-xs text-gray-400 hover:text-white hover:border-white/25 transition-colors shrink-0">
+            <button type="submit" id="final-due-btn" disabled
+              class="px-3 py-2 rounded-md border border-white/10 text-xs text-gray-400 hover:text-white hover:border-white/25 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-400 disabled:hover:border-white/10">
               Update
             </button>
           </form>
@@ -557,6 +563,7 @@
   <%
     const _modalEstimate = ((TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0) - (booking.discountAmount || 0));
     const _defaultDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const _minDueDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   %>
   <div id="accept-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center px-4">
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="document.getElementById('accept-modal').classList.add('hidden')"></div>

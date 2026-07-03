@@ -16,8 +16,17 @@ const { startInvoiceExpiryJob } = require("./lib/invoiceExpiry");
 
 function endOfDay(dateStr) {
   if (!dateStr) return null;
-  const d = new Date(`${dateStr}T23:59:59`);
+  const d = new Date(`${dateStr}T23:59:59Z`);
   return isNaN(d.getTime()) ? null : d;
+}
+
+const MIN_DUE_DATE_LEAD_DAYS = 3;
+
+function minDueDate() {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() + MIN_DUE_DATE_LEAD_DAYS);
+  return d;
 }
 
 const STATUS_LABELS = {
@@ -265,12 +274,12 @@ app.get("/track", async (req, res) => {
     const booking = await BookingRequest.findOne({
       name: { $regex: new RegExp(`^${name?.trim()}$`, "i") },
       email: email?.trim().toLowerCase(),
-    }).select("crCode name serviceType pricingTier budget status depositStatus depositDueDate deliveryDate createdAt");
+    }).select("crCode name serviceType pricingTier budget status depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate createdAt");
     return res.render("track", { searched: true, method: "identity", name: name?.trim(), email: email?.trim(), booking });
   }
 
   const booking = await BookingRequest.findOne({ crCode: code.toUpperCase().trim() })
-    .select("crCode name serviceType pricingTier budget status depositStatus depositDueDate deliveryDate createdAt");
+    .select("crCode name serviceType pricingTier budget status depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate createdAt");
   res.render("track", { searched: true, method: "code", code: code.toUpperCase().trim(), booking });
 });
 
@@ -332,7 +341,7 @@ app.post("/hire", preCrCode, upload.array("files", 20), async (req, res) => {
 
   // Server-side validation
   const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!name || !email || !emailRe.test(email) || !location || !serviceType.length || !pricingTier || !projectBrief) {
+  if (!name || !email || !emailRe.test(email) || !location || !serviceType.length || !pricingTier || !projectBrief || projectBrief.length > 2000) {
     let loggedInUser = null;
     let lastBooking = null;
     if (req.session.userId) {
@@ -516,7 +525,7 @@ app.get("/dashboard", requireClient, async (req, res) => {
   const user = await User.findById(req.session.userId).populate({
     path: "bookings",
     match: { filesDeleted: { $ne: true } },
-    select: "crCode serviceType pricingTier addOns discountAmount status createdAt revisions uploadedFiles agreedPrice depositStatus finalPaymentStatus projectBrief archived",
+    select: "crCode serviceType pricingTier addOns discountAmount status createdAt revisions uploadedFiles agreedPrice depositStatus depositInvoiceUrl finalPaymentStatus finalInvoiceUrl projectBrief archived",
     options: { sort: { createdAt: -1 } },
   });
   if (!user) {
@@ -722,15 +731,52 @@ app.post("/api/admin/notifications/mark-read", requireAdmin, async (req, res) =>
   res.json({ ok: true });
 });
 
+const ADMIN_PAGE_SIZE = 30;
+const ADMIN_SEARCH_FIELDS = {
+  crCode: "crCode",
+  name: "name",
+  email: "email",
+  location: "location",
+  services: "serviceType",
+  package: "pricingTier",
+  status: "status",
+};
+
 app.get("/admin", requireAdmin, async (req, res) => {
   const archivedView = req.query.view === "archived";
   const filter = archivedView ? { archived: true } : { archived: { $ne: true } };
-  const [bookings, total, pending] = await Promise.all([
-    BookingRequest.find(filter).sort({ createdAt: -1 }),
+
+  const statusParam = (req.query.status || "all").trim();
+  if (!archivedView && statusParam !== "all") {
+    const statuses = statusParam.split(",").filter(Boolean);
+    if (statuses.length) filter.status = { $in: statuses };
+  }
+
+  const q = (req.query.q || "").trim();
+  const field = ADMIN_SEARCH_FIELDS[req.query.field] ? req.query.field : "all";
+  if (q) {
+    const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    filter.$or = field === "all"
+      ? Object.values(ADMIN_SEARCH_FIELDS).map((f) => ({ [f]: re }))
+      : [{ [ADMIN_SEARCH_FIELDS[field]]: re }];
+  }
+
+  const [total, pending] = await Promise.all([
     BookingRequest.countDocuments(filter),
     BookingRequest.countDocuments({ archived: { $ne: true }, status: "pending" }),
   ]);
-  res.render("admin/dashboard", { bookings, total, pending, TIER_PRICES, ADDON_PRICES, archivedView });
+  const totalPages = Math.max(1, Math.ceil(total / ADMIN_PAGE_SIZE));
+  const page = Math.min(Math.max(1, parseInt(req.query.page) || 1), totalPages);
+
+  const bookings = await BookingRequest.find(filter)
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * ADMIN_PAGE_SIZE)
+    .limit(ADMIN_PAGE_SIZE);
+
+  res.render("admin/dashboard", {
+    bookings, total, pending, TIER_PRICES, ADDON_PRICES, archivedView,
+    page, totalPages, pageSize: ADMIN_PAGE_SIZE, q, field, statusParam,
+  });
 });
 
 app.get("/admin/booking/:id", requireAdmin, async (req, res) => {
@@ -792,8 +838,8 @@ app.post("/admin/booking/:id/send-deposit", requireAdmin, async (req, res) => {
   if (!agreedPrice || agreedPrice <= 0) return res.redirect(`/admin/booking/${req.params.id}`);
 
   const depositDueDate = endOfDay(req.body.dueDate);
-  if (!depositDueDate || depositDueDate <= new Date()) {
-    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent("Deposit due date must be a valid future date.")}`);
+  if (!depositDueDate || depositDueDate < minDueDate()) {
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(`Deposit due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`)}`);
   }
 
   try {
@@ -828,6 +874,7 @@ app.post("/admin/booking/:id/send-deposit", requireAdmin, async (req, res) => {
     booking.agreedPrice = agreedPrice;
     booking.stripeCustomerId = customer.id;
     booking.depositInvoiceId = invoice.id;
+    booking.depositInvoiceUrl = finalized.hosted_invoice_url;
     booking.depositStatus = "pending";
     booking.status = "accepted";
     booking.depositDueDate = depositDueDate;
@@ -858,12 +905,58 @@ app.post("/admin/booking/:id/deposit-due-date", requireAdmin, async (req, res) =
   if (!booking || booking.depositStatus !== "pending") return res.redirect(`/admin/booking/${req.params.id}`);
 
   const depositDueDate = endOfDay(req.body.dueDate);
-  if (!depositDueDate || depositDueDate <= new Date()) {
-    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent("Deposit due date must be a valid future date.")}`);
+  if (!depositDueDate || depositDueDate < minDueDate()) {
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(`Deposit due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`)}`);
+  }
+  if (booking.depositDueDate && depositDueDate.getTime() === booking.depositDueDate.getTime()) {
+    return res.redirect(`/admin/booking/${req.params.id}`);
   }
 
-  booking.depositDueDate = depositDueDate;
-  await booking.save();
+  try {
+    if (booking.depositInvoiceId) {
+      await stripe.invoices.voidInvoice(booking.depositInvoiceId);
+    }
+
+    const invoice = await stripe.invoices.create({
+      customer: booking.stripeCustomerId,
+      collection_method: "send_invoice",
+      due_date: Math.floor(depositDueDate.getTime() / 1000),
+      currency: "usd",
+      metadata: { crCode: booking.crCode },
+    });
+
+    await stripe.invoiceItems.create({
+      customer: booking.stripeCustomerId,
+      invoice: invoice.id,
+      amount: Math.round(booking.agreedPrice * 0.30 * 100),
+      currency: "usd",
+      description: `30% Deposit — Jarumiri Studios (${booking.crCode})`,
+    });
+
+    const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
+    await stripe.invoices.sendInvoice(invoice.id);
+
+    booking.depositInvoiceId = invoice.id;
+    booking.depositInvoiceUrl = finalized.hosted_invoice_url;
+    booking.depositDueDate = depositDueDate;
+    booking.depositReminderSent = false;
+    await booking.save();
+
+    if (booking.clientId) {
+      const dueDateStr = depositDueDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+      await Notification.create({
+        userId: booking.clientId,
+        bookingId: booking._id,
+        crCode: booking.crCode,
+        type: "due_date_updated",
+        message: `The deposit due date for project ${booking.crCode} has been moved to ${dueDateStr}. A fresh payment link has been sent.`,
+      });
+    }
+  } catch (err) {
+    console.error("Stripe deposit due-date update error:", err.message);
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
+  }
+
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 
@@ -888,8 +981,8 @@ app.post("/admin/booking/:id/send-final", requireAdmin, async (req, res) => {
   }
 
   const finalDueDate = endOfDay(req.body.dueDate);
-  if (!finalDueDate || finalDueDate <= new Date()) {
-    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent("Final due date must be a valid future date.")}`);
+  if (!finalDueDate || finalDueDate < minDueDate()) {
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(`Final due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`)}`);
   }
 
   try {
@@ -913,6 +1006,7 @@ app.post("/admin/booking/:id/send-final", requireAdmin, async (req, res) => {
     await stripe.invoices.sendInvoice(invoice.id);
 
     booking.finalInvoiceId = invoice.id;
+    booking.finalInvoiceUrl = finalized.hosted_invoice_url;
     booking.finalPaymentStatus = "pending";
     booking.finalDueDate = finalDueDate;
     await booking.save();
@@ -941,12 +1035,58 @@ app.post("/admin/booking/:id/final-due-date", requireAdmin, async (req, res) => 
   if (!booking || booking.finalPaymentStatus !== "pending") return res.redirect(`/admin/booking/${req.params.id}`);
 
   const finalDueDate = endOfDay(req.body.dueDate);
-  if (!finalDueDate || finalDueDate <= new Date()) {
-    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent("Final due date must be a valid future date.")}`);
+  if (!finalDueDate || finalDueDate < minDueDate()) {
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(`Final due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`)}`);
+  }
+  if (booking.finalDueDate && finalDueDate.getTime() === booking.finalDueDate.getTime()) {
+    return res.redirect(`/admin/booking/${req.params.id}`);
   }
 
-  booking.finalDueDate = finalDueDate;
-  await booking.save();
+  try {
+    if (booking.finalInvoiceId) {
+      await stripe.invoices.voidInvoice(booking.finalInvoiceId);
+    }
+
+    const invoice = await stripe.invoices.create({
+      customer: booking.stripeCustomerId,
+      collection_method: "send_invoice",
+      due_date: Math.floor(finalDueDate.getTime() / 1000),
+      currency: "usd",
+      metadata: { crCode: booking.crCode },
+    });
+
+    await stripe.invoiceItems.create({
+      customer: booking.stripeCustomerId,
+      invoice: invoice.id,
+      amount: Math.round(booking.agreedPrice * 0.70 * 100),
+      currency: "usd",
+      description: `Final Payment — Jarumiri Studios (${booking.crCode})`,
+    });
+
+    const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
+    await stripe.invoices.sendInvoice(invoice.id);
+
+    booking.finalInvoiceId = invoice.id;
+    booking.finalInvoiceUrl = finalized.hosted_invoice_url;
+    booking.finalDueDate = finalDueDate;
+    booking.finalReminderSent = false;
+    await booking.save();
+
+    if (booking.clientId) {
+      const dueDateStr = finalDueDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+      await Notification.create({
+        userId: booking.clientId,
+        bookingId: booking._id,
+        crCode: booking.crCode,
+        type: "due_date_updated",
+        message: `The final payment due date for project ${booking.crCode} has been moved to ${dueDateStr}. A fresh payment link has been sent.`,
+      });
+    }
+  } catch (err) {
+    console.error("Stripe final due-date update error:", err.message);
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
+  }
+
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 

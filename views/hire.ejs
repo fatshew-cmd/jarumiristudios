@@ -88,11 +88,29 @@
     /* File list */
     .file-item {
       display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap;
+      row-gap: 8px;
       background: rgba(255,255,255,0.04);
       border: 1px solid rgba(255,255,255,0.08);
       border-radius: 10px;
       padding: 12px 14px;
       font-size: 13px;
+    }
+    .file-item-info { min-width: 0; }
+    .remove-file-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px;
+      border-radius: 8px;
+      font-size: 18px; line-height: 1;
+      flex-shrink: 0;
+    }
+    .remove-file-btn:hover { background: rgba(239,68,68,0.1); }
+
+    @media (max-width: 480px) {
+      .drop-zone { padding: 24px 16px; }
+      .drop-zone svg { width: 32px; height: 32px; margin-bottom: 8px; }
+      .file-item-info { width: 100%; }
+      .file-item-actions { width: 100%; justify-content: space-between; }
     }
 
     /* Step panels */
@@ -570,8 +588,11 @@
             </div>
 
             <div>
-              <label class="form-label" for="projectBrief">Project brief <span class="text-amber-400">*</span></label>
-              <textarea class="form-input resize-none" id="projectBrief" name="projectBrief" placeholder="Describe what you need — style, mood, reference clips, delivery format, deadlines, anything relevant…"><%= locals.formData ? formData.projectBrief : '' %></textarea>
+              <div class="flex items-center justify-between mb-2">
+                <label class="form-label mb-0" for="projectBrief">Project brief <span class="text-amber-400">*</span></label>
+                <span class="text-xs text-gray-500" id="brief-count">0 / 2000</span>
+              </div>
+              <textarea class="form-input resize-none" id="projectBrief" name="projectBrief" maxlength="2000" oninput="updateBriefCount()" placeholder="Describe what you need — style, mood, reference clips, delivery format, deadlines, anything relevant…"><%= locals.formData ? formData.projectBrief : '' %></textarea>
               <p class="field-error hidden" id="err-brief">Please describe your project.</p>
             </div>
           </div>
@@ -759,6 +780,17 @@
       }
     }
 
+    // ── Brief character count ──
+    const BRIEF_MAX = 2000;
+    function updateBriefCount() {
+      const brief = document.getElementById('projectBrief');
+      const count = document.getElementById('brief-count');
+      const len = brief.value.length;
+      count.textContent = `${len} / ${BRIEF_MAX}`;
+      count.className = 'text-xs ' + (len >= BRIEF_MAX ? 'text-red-400' : len >= BRIEF_MAX * 0.9 ? 'text-amber-400' : 'text-gray-500');
+    }
+    updateBriefCount();
+
     // ── Drop zone ──
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
@@ -819,15 +851,15 @@
           : (f.size / 1024 / 1024).toFixed(1) + ' MB';
         fileList.innerHTML += `
           <div class="file-item">
-            <div class="flex items-center gap-3 min-w-0">
+            <div class="file-item-info flex items-center gap-3 min-w-0">
               <svg class="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
               </svg>
               <span class="text-gray-300 truncate">${f.name}</span>
             </div>
-            <div class="flex items-center gap-4 flex-shrink-0 ml-4">
+            <div class="file-item-actions flex items-center gap-3 flex-shrink-0">
               <span class="text-gray-400 text-xs">${size}</span>
-              <button type="button" onclick="removeFile(${i})" class="text-gray-400 hover:text-red-400 transition-colors text-lg leading-none">×</button>
+              <button type="button" onclick="removeFile(${i})" class="remove-file-btn text-gray-400 hover:text-red-400 transition-colors" aria-label="Remove file">×</button>
             </div>
           </div>`;
       });

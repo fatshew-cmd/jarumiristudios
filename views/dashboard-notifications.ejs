@@ -152,6 +152,10 @@
             iconName = 'material-symbols-light:receipt-long'; iconClass = 'invoice'; iconColor = '#f59e0b';
           } else if (n.type === 'payment_confirmed') {
             iconName = 'material-symbols-light:check-circle'; iconClass = 'payment'; iconColor = '#34d399';
+          } else if (n.type === 'due_date_updated') {
+            iconName = 'material-symbols-light:calendar-clock'; iconClass = 'invoice'; iconColor = '#f59e0b';
+          } else if (n.type === 'due_date_reminder') {
+            iconName = 'material-symbols-light:alarm'; iconClass = 'invoice'; iconColor = '#f59e0b';
           } else {
             iconName = 'material-symbols-light:close-small'; iconClass = 'dismiss'; iconColor = '#f87171';
           }
