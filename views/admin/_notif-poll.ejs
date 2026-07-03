@@ -1,0 +1,89 @@
+<script>
+(function () {
+  var lastSeen = Date.now();
+  var isNotifPage = window.location.pathname === '/admin/notifications';
+
+  function updateBadge(count) {
+    var bell = document.getElementById('admin-notif-bell');
+    if (!bell) return;
+    var badge = document.getElementById('admin-notif-count');
+    if (count > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.id = 'admin-notif-count';
+        badge.style.cssText = 'display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;';
+        bell.appendChild(badge);
+      }
+      badge.textContent = count;
+    } else if (badge) {
+      badge.remove();
+    }
+  }
+
+  function buildRow(n) {
+    var viewLink = n.bookingId
+      ? '<a href="/admin/booking/' + n.bookingId + '" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>'
+      : '';
+    var row = document.createElement('div');
+    row.className = 'notif-row unread';
+    row.innerHTML =
+      '<div class="notif-icon nudge">' +
+        '<iconify-icon icon="material-symbols-light:notifications-active" width="17" height="17" style="color:#818cf8"></iconify-icon>' +
+      '</div>' +
+      '<div class="flex-1 min-w-0">' +
+        '<p class="text-sm text-gray-200 leading-snug">' + n.message + '</p>' +
+        '<div class="flex items-center gap-3 mt-1.5">' +
+          '<span class="text-xs text-gray-600">Just now</span>' +
+          viewLink +
+        '</div>' +
+      '</div>' +
+      '<div class="unread-dot"></div>';
+    return row;
+  }
+
+  function prependToList(items) {
+    var empty = document.getElementById('notif-empty');
+    var list  = document.getElementById('notif-list');
+
+    if (empty) {
+      var wrapper = document.createElement('div');
+      wrapper.id = 'notif-list';
+      wrapper.className = 'border border-white/5 rounded-md overflow-hidden bg-[#0d0d0d]';
+      empty.replaceWith(wrapper);
+      list = wrapper;
+    }
+
+    items.forEach(function (n) {
+      list.insertBefore(buildRow(n), list.firstChild);
+    });
+  }
+
+  async function poll() {
+    try {
+      var res = await fetch('/api/admin/notifications/poll?since=' + lastSeen);
+      if (!res.ok) return;
+      var data = await res.json();
+      lastSeen = data.now;
+
+      updateBadge(data.unreadCount);
+
+      if (!data.items.length) return;
+
+      if (isNotifPage) {
+        prependToList(data.items);
+        fetch('/api/admin/notifications/mark-read', { method: 'POST' });
+        updateBadge(0);
+        data.items.forEach(function (n) {
+          if (typeof showToast === 'function') showToast('New nudge', n.message, 'info');
+        });
+      } else if (typeof showToast === 'function') {
+        data.items.forEach(function (n) {
+          showToast('New nudge', n.message, 'info');
+        });
+      }
+    } catch {}
+  }
+
+  setInterval(poll, 15000);
+}());
+</script>

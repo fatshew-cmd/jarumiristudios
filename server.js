@@ -5,11 +5,13 @@ const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
 const session = require("express-session");
+const { MongoStore } = require("connect-mongo");
 const BookingRequest = require("./models/BookingRequest");
 const User = require("./models/User");
 const Coupon = require("./models/Coupon");
 const Notification = require("./models/Notification");
-const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert, sendAdminPauseAlert, sendAdminNudgeAlert, sendAdminUnexpectedPaymentAlert } = require("./lib/mailer");
+const AdminNotification = require("./models/AdminNotification");
+const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert, sendAdminPauseAlert, sendAdminUnexpectedPaymentAlert } = require("./lib/mailer");
 const { startInvoiceExpiryJob } = require("./lib/invoiceExpiry");
 
 function endOfDay(dateStr) {
@@ -116,6 +118,7 @@ app.use(session({
   secret: process.env.SESSION_SECRET || "jarumiri-dev-secret",
   resave: false,
   saveUninitialized: false,
+  store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
   cookie: { maxAge: 8 * 60 * 60 * 1000 }, // 8 hours
 }));
 
@@ -601,9 +604,14 @@ app.get("/dashboard/booking/:id", requireClient, async (req, res) => {
 app.post("/dashboard/booking/:id/delete", requireClient, async (req, res) => {
   const booking = await BookingRequest.findOneAndUpdate(
     { _id: req.params.id, clientId: req.session.userId },
-    { filesDeleted: true, uploadedFiles: [] }
+    { filesDeleted: true, uploadedFiles: [], archived: true }
   );
-  if (booking?.crCode) hardDeleteBookingFiles(booking.crCode);
+  if (booking?.crCode) {
+    hardDeleteBookingFiles(booking.crCode);
+    const archiveDir = path.join(__dirname, "uploads", "_archive");
+    fs.mkdirSync(archiveDir, { recursive: true });
+    fs.rename(path.join(__dirname, "uploads", booking.crCode), path.join(archiveDir, booking.crCode), () => {});
+  }
   res.redirect("/dashboard");
 });
 
@@ -631,7 +639,23 @@ app.post("/dashboard/booking/:id/nudge", requireClient, async (req, res) => {
     status: { $nin: ["declined", "completed"] },
   });
   if (!booking) return res.sendStatus(404);
-  sendAdminNudgeAlert(booking);
+
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const recentNudges = await AdminNotification.countDocuments({
+    bookingId: booking._id,
+    type: "nudge",
+    createdAt: { $gte: oneHourAgo },
+  });
+  if (recentNudges >= 3) {
+    return res.status(429).json({ error: "You can only nudge up to 3 times per hour." });
+  }
+
+  await AdminNotification.create({
+    bookingId: booking._id,
+    crCode: booking.crCode,
+    type: "nudge",
+    message: `${booking.name} nudged you about project ${booking.crCode}.`,
+  });
   res.sendStatus(200);
 });
 
@@ -646,6 +670,18 @@ app.post("/dashboard/booking/:id/revision", requireClient, async (req, res) => {
 });
 
 // ── Admin routes ──
+
+// Inject unread admin notification count into all /admin views
+app.use("/admin", async (req, res, next) => {
+  res.locals.adminUnreadCount = 0;
+  if (req.session.isAdmin) {
+    try {
+      res.locals.adminUnreadCount = await AdminNotification.countDocuments({ read: false });
+    } catch {}
+  }
+  next();
+});
+
 app.get("/admin/login", (req, res) => {
   if (req.session.isAdmin) return res.redirect("/admin");
   res.render("admin/login");
@@ -661,6 +697,29 @@ app.post("/admin/login", (req, res) => {
 
 app.get("/admin/logout", (req, res) => {
   req.session.destroy(() => res.redirect("/admin/login"));
+});
+
+app.get("/admin/notifications", requireAdmin, async (req, res) => {
+  const notifications = await AdminNotification.find().sort({ createdAt: -1 }).limit(200);
+  await AdminNotification.updateMany({ read: false }, { read: true });
+  res.locals.adminUnreadCount = 0;
+  res.render("admin/notifications", { notifications });
+});
+
+app.get("/api/admin/notifications/poll", requireAdmin, async (req, res) => {
+  const since = parseInt(req.query.since) || 0;
+  const [unreadCount, items] = await Promise.all([
+    AdminNotification.countDocuments({ read: false }),
+    since
+      ? AdminNotification.find({ createdAt: { $gt: new Date(since) } }).sort({ createdAt: -1 }).lean()
+      : [],
+  ]);
+  res.json({ unreadCount, items, now: Date.now() });
+});
+
+app.post("/api/admin/notifications/mark-read", requireAdmin, async (req, res) => {
+  await AdminNotification.updateMany({ read: false }, { read: true });
+  res.json({ ok: true });
 });
 
 app.get("/admin", requireAdmin, async (req, res) => {

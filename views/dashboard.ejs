@@ -489,7 +489,11 @@
 
     function nudgeAdmin(id, code) {
       fetch(`/dashboard/booking/${id}/nudge`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-        .then(r => r.ok ? showToast('Nudge sent!', `Admin has been notified about project ${code}.`) : alert('Could not send nudge.'))
+        .then(async r => {
+          if (r.ok) return showToast('Nudge sent!', `Admin has been notified about project ${code}.`);
+          if (r.status === 429) return alert((await r.json()).error);
+          alert('Could not send nudge.');
+        })
         .catch(() => alert('Could not send nudge.'));
     }
 
@@ -523,8 +527,17 @@
       const ids = manageableIds([...clientChecked]);
       if (!ids.length) return;
       Promise.all(ids.map(id =>
-        fetch(`/dashboard/booking/${id}/nudge`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-      )).then(() => showToast('Nudges sent!', `Admin notified about ${ids.length} project(s).`));
+        fetch(`/dashboard/booking/${id}/nudge`, { method: 'POST', headers: { 'Content-Type': 'application/json' } }).then(r => r.ok)
+      )).then(results => {
+        const sent = results.filter(Boolean).length;
+        if (sent === ids.length) {
+          showToast('Nudges sent!', `Admin notified about ${sent} project(s).`);
+        } else if (sent > 0) {
+          showToast('Some nudges sent', `${sent} of ${ids.length} sent — the rest hit the 3-per-hour limit.`);
+        } else {
+          alert('Could not send nudges — these projects may have hit the 3-per-hour limit.');
+        }
+      });
     }
   </script>
 

@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/iconify-icon@2/dist/iconify-icon.min.js"></script>
   <style>
     body { font-family: 'Inter', sans-serif; }
     h1, h2, .brand { font-family: 'Syne', sans-serif; }
@@ -82,7 +83,15 @@
         <span class="text-white/10">|</span>
         <span class="text-white font-semibold text-sm">Coupons</span>
       </div>
-      <a href="/admin/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
+      <div class="flex items-center gap-5">
+        <a href="/admin/notifications" id="admin-notif-bell" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
+          Notifications
+          <% if (locals.adminUnreadCount > 0) { %>
+          <span id="admin-notif-count" style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;"><%= adminUnreadCount %></span>
+          <% } %>
+        </a>
+        <a href="/admin/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
+      </div>
     </div>
   </header>
 
@@ -223,5 +232,8 @@
       }
     });
   </script>
+
+  <%- include('../_toast') %>
+  <%- include('_notif-poll') %>
 </body>
 </html>

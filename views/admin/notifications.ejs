@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Notifications | Jarumiri Admin</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
+  <link rel="stylesheet" href="/output.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/iconify-icon@2/dist/iconify-icon.min.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, .brand { font-family: 'Syne', sans-serif; }
+    button, a { cursor: pointer; }
+
+    .notif-row {
+      display: flex; align-items: flex-start; gap: 14px;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      transition: background 0.15s;
+    }
+    .notif-row:last-child { border-bottom: none; }
+    .notif-row.unread { background: rgba(255,255,255,0.015); }
+    .notif-row:hover { background: rgba(255,255,255,0.03); }
+
+    .notif-icon {
+      width: 34px; height: 34px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .notif-icon.nudge { background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.2); }
+
+    .unread-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #f59e0b; flex-shrink: 0; margin-top: 6px;
+    }
+  </style>
+</head>
+<body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-white/5 bg-[#080808]/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <a href="/admin" class="text-gray-500 hover:text-white transition-colors text-sm">← All requests</a>
+        <span class="text-white/10">|</span>
+        <span class="text-white font-semibold text-sm">Notifications</span>
+      </div>
+      <a href="/admin/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto px-6 py-10">
+
+    <!-- Page header -->
+    <div class="mb-8">
+      <h1 class="text-xl font-bold text-white">Notifications</h1>
+      <p class="text-gray-600 text-sm mt-0.5">Client nudges and updates.</p>
+    </div>
+
+    <% if (!notifications || notifications.length === 0) { %>
+    <!-- Empty state -->
+    <div id="notif-empty" class="text-center py-20 border border-white/5 rounded-md bg-white/1">
+      <div class="w-11 h-11 rounded-md bg-white/3 border border-white/8 flex items-center justify-center mx-auto mb-4">
+        <iconify-icon icon="material-symbols-light:notifications-off" width="22" height="22" class="text-gray-700"></iconify-icon>
+      </div>
+      <p class="text-gray-600 text-sm">No notifications yet.</p>
+      <p class="text-gray-700 text-xs mt-1">You'll be notified here when a client nudges you.</p>
+    </div>
+
+    <% } else { %>
+    <div id="notif-list" class="border border-white/5 rounded-md overflow-hidden bg-[#0d0d0d]">
+      <% notifications.forEach(n => {
+        const isUnread = !n.read;
+        const date = new Date(n.createdAt);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+        let timeLabel;
+        if (diffMins < 1)        timeLabel = 'Just now';
+        else if (diffMins < 60)  timeLabel = diffMins + 'm ago';
+        else if (diffHours < 24) timeLabel = diffHours + 'h ago';
+        else if (diffDays < 7)   timeLabel = diffDays + 'd ago';
+        else                     timeLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      %>
+      <div class="notif-row <%= isUnread ? 'unread' : '' %>">
+        <div class="notif-icon nudge">
+          <iconify-icon icon="material-symbols-light:notifications-active" width="17" height="17" style="color:#818cf8"></iconify-icon>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm text-gray-200 leading-snug"><%= n.message %></p>
+          <div class="flex items-center gap-3 mt-1.5">
+            <span class="text-xs text-gray-600"><%= timeLabel %></span>
+            <% if (n.bookingId) { %>
+            <a href="/admin/booking/<%= n.bookingId %>" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>
+            <% } %>
+          </div>
+        </div>
+        <% if (isUnread) { %>
+        <div class="unread-dot"></div>
+        <% } %>
+      </div>
+      <% }) %>
+    </div>
+    <% } %>
+
+  </main>
+
+  <%- include('../_toast') %>
+  <%- include('_notif-poll') %>
+</body>
+</html>
