@@ -300,14 +300,26 @@
           <% } else if (booking.archived) { %>
           <p class="text-xs text-gray-600">Restore this booking to upload more final files.</p>
           <% } else { %>
-          <form action="/admin/booking/<%= booking._id %>/deliverables" method="POST" enctype="multipart/form-data" class="space-y-3">
-            <input type="file" name="files" multiple
-              class="w-full text-xs text-gray-400 file:mr-3 file:px-3 file:py-1.5 file:rounded-full file:border file:border-white/10 file:bg-white/5 file:text-gray-300 file:text-xs file:font-semibold hover:file:border-white/25 file:cursor-pointer" />
-            <button type="submit"
-              class="w-full px-4 py-2.5 rounded-full border border-white/10 text-sm text-gray-300 hover:text-white hover:border-white/25 transition-colors">
+          <form id="deliverables-form" action="/admin/booking/<%= booking._id %>/deliverables" method="POST" enctype="multipart/form-data">
+            <label id="deliverables-label" for="deliverables-input"
+              class="w-full flex items-center justify-center px-4 py-2.5 rounded-full border border-white/10 text-sm text-gray-300 hover:text-white hover:border-white/25 transition-colors cursor-pointer">
               Upload final files
-            </button>
+            </label>
+            <input id="deliverables-input" type="file" name="files" multiple class="sr-only" />
           </form>
+          <script>
+            (function () {
+              var input = document.getElementById('deliverables-input');
+              var label = document.getElementById('deliverables-label');
+              var form = document.getElementById('deliverables-form');
+              input.addEventListener('change', function () {
+                if (!input.files.length) return;
+                label.textContent = 'Uploading ' + input.files.length + ' file' + (input.files.length === 1 ? '' : 's') + '…';
+                label.classList.add('pointer-events-none', 'opacity-60');
+                form.submit();
+              });
+            }());
+          </script>
           <% } %>
         </div>
 
@@ -756,5 +768,11 @@
 
   <%- include('../_toast') %>
   <%- include('_notif-poll') %>
+  <% if (locals.delivered) { %>
+  <script>showToast('Files uploaded', '<%= delivered %> file<%= delivered === 1 ? "" : "s" %> uploaded.');</script>
+  <% } %>
+  <% if (locals.deliverError) { %>
+  <script>showToast('Upload failed', <%- JSON.stringify(deliverError) %>, 'error');</script>
+  <% } %>
 </body>
 </html>

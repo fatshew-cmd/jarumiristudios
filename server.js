@@ -3,8 +3,10 @@ const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const multer = require("multer");
 const session = require("express-session");
+const cookieParser = require("cookie-parser");
 const { MongoStore } = require("connect-mongo");
 const BookingRequest = require("./models/BookingRequest");
 const User = require("./models/User");
@@ -128,6 +130,8 @@ app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (r
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
+app.use(cookieParser());
+app.use(assignVisitorId);
 app.use(session({
   secret: process.env.SESSION_SECRET || "jarumiri-dev-secret",
   resave: false,
@@ -183,6 +187,49 @@ async function generateCrCode() {
     exists = await BookingRequest.exists({ crCode: code });
   } while (exists);
   return code;
+}
+
+const VISITOR_ID_COOKIE = "jrmr_vid";
+const VISITOR_ID_MAX_AGE = 365 * 24 * 60 * 60 * 1000; // ~1 year
+
+// Long-lived anonymous visitor id, set for every visitor (not just guests) so it's
+// already present by the time someone reaches /hire, and stored on every booking
+// regardless of tier — reusable if a "returning client" tier gets added later.
+function assignVisitorId(req, res, next) {
+  let vid = req.cookies?.[VISITOR_ID_COOKIE];
+  if (!vid) {
+    vid = crypto.randomUUID();
+    res.cookie(VISITOR_ID_COOKIE, vid, {
+      maxAge: VISITOR_ID_MAX_AGE,
+      httpOnly: true,
+      sameSite: "lax",
+    });
+  }
+  req.visitorId = vid;
+  next();
+}
+
+const GUEST_MAX_FILES = 3;
+const GUEST_MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
+const MEMBER_MAX_FILES = 20;
+const MEMBER_MAX_FILE_SIZE = 250 * 1024 * 1024; // 250 MB
+const GUEST_SUBMISSION_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// Guests (no account) get 1 /hire submission per rolling 24h, keyed on the visitor
+// cookie above — runs before preCrCode/multer so an over-quota guest costs nothing
+// (no BR code generated, no bytes uploaded, nothing to clean up).
+async function enforceGuestSubmissionQuota(req, res, next) {
+  if (req.session.userId) return next();
+  const since = new Date(Date.now() - GUEST_SUBMISSION_WINDOW_MS);
+  const recent = await BookingRequest.exists({ visitorId: req.visitorId, createdAt: { $gte: since } });
+  if (recent) {
+    return res.render("hire", {
+      error: "You've already submitted a request in the last 24 hours. Create a free account for unlimited submissions, or check back later.",
+      loggedInUser: null,
+      lastBooking: null,
+    });
+  }
+  next();
 }
 
 async function preCrCode(req, res, next) {
@@ -262,6 +309,39 @@ function uniqueFilename(originalname) {
   return `${unique}${path.extname(originalname)}`;
 }
 
+// Rejects file types that browsers will render/execute as an active document (HTML, SVG) when
+// opened directly — served files are trusted by extension at request time regardless of the
+// declared upload mimetype, so these must never be accepted no matter what mimetype is claimed.
+const DANGEROUS_UPLOAD_EXT_RE = /\.(html?|xhtml|shtml|svg)$/i;
+function rejectDangerousFiles(req, file, cb) {
+  if (DANGEROUS_UPLOAD_EXT_RE.test(file.originalname)) {
+    return cb(new Error("That file type isn't allowed."));
+  }
+  cb(null, true);
+}
+
+// Client-submitted files (the /hire form) are further restricted to an allowlist matching
+// the upload widget's own `accept` attribute (video/audio/image, plus .zip/.rar for raw
+// footage archives) — admin-uploaded deliverables stay on the blocklist above only, since
+// admin is trusted to hand back whatever final file type a project actually needs.
+const ALLOWED_UPLOAD_MIME_RE = /^(video|audio|image)\//i;
+const ARCHIVE_UPLOAD_EXT_RE = /\.(zip|rar)$/i;
+// Archive mimetypes are inconsistent across browsers/OSes; .rar in particular is commonly
+// reported as the generic application/octet-stream, so that's only trusted alongside a
+// matching .zip/.rar extension, never on its own.
+const ARCHIVE_UPLOAD_MIME_RE = /^application\/(zip|x-zip-compressed|x-rar-compressed|vnd\.rar|x-rar|octet-stream)$/i;
+function restrictToAllowedMediaTypes(req, file, cb) {
+  rejectDangerousFiles(req, file, (err) => {
+    if (err) return cb(err);
+    const isMedia = ALLOWED_UPLOAD_MIME_RE.test(file.mimetype);
+    const isArchive = ARCHIVE_UPLOAD_EXT_RE.test(file.originalname) && ARCHIVE_UPLOAD_MIME_RE.test(file.mimetype);
+    if (!isMedia && !isArchive) {
+      return cb(new Error("That file type isn't allowed. Upload video, audio, image, or .zip/.rar files."));
+    }
+    cb(null, true);
+  });
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const type = fileTypeFromMime(file.mimetype);
@@ -273,7 +353,16 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 250 * 1024 * 1024 }, // 250 MB
+  limits: { fileSize: MEMBER_MAX_FILE_SIZE },
+  fileFilter: restrictToAllowedMediaTypes,
+});
+// Guest tier: same storage/fileFilter, smaller per-file cap — multer's limits are fixed
+// at construction, so a distinct instance is needed for the size restriction (file count
+// is just a different argument to .array("files", N) at the call site).
+const uploadGuest = multer({
+  storage,
+  limits: { fileSize: GUEST_MAX_FILE_SIZE },
+  fileFilter: restrictToAllowedMediaTypes,
 });
 
 // Admin-uploaded final deliverables — separate storage so they never mix with client-submitted raw files
@@ -288,6 +377,7 @@ const deliverableStorage = multer.diskStorage({
 const deliverableUpload = multer({
   storage: deliverableStorage,
   limits: { fileSize: 250 * 1024 * 1024 }, // 250 MB
+  fileFilter: rejectDangerousFiles,
 });
 
 // Also blocks uploads to an archived booking — its folder lives under uploads/_archive/, not the active path,
@@ -373,7 +463,22 @@ app.post("/hire/coupon/validate", async (req, res) => {
   });
 });
 
-app.post("/hire", preCrCode, upload.array("files", 20), async (req, res) => {
+app.post("/hire", enforceGuestSubmissionQuota, preCrCode, (req, res, next) => {
+  const isGuest = !req.session.userId;
+  const activeUpload = isGuest ? uploadGuest : upload;
+  const maxFiles = isGuest ? GUEST_MAX_FILES : MEMBER_MAX_FILES;
+  activeUpload.array("files", maxFiles)(req, res, (err) => {
+    if (!err) return next();
+    const message = err.code === "LIMIT_FILE_SIZE"
+      ? isGuest ? `One or more files exceed the ${GUEST_MAX_FILE_SIZE / 1024 / 1024}MB guest limit. Create a free account for larger uploads.`
+                : "One or more files exceed the 250MB limit."
+      : err.code === "LIMIT_UNEXPECTED_FILE"
+      ? isGuest ? `Guests can upload up to ${GUEST_MAX_FILES} files at a time. Create a free account to upload more.`
+                : "You can upload up to 20 files at a time."
+      : err.message || "Upload failed.";
+    return res.render("hire", { error: message, formData: req.body, loggedInUser: null, lastBooking: null });
+  });
+}, async (req, res) => {
   const { name, email, location, telegramHandle, pricingTier, budget, projectBrief } = req.body;
   const serviceType = [].concat(req.body.serviceType || []).filter(Boolean);
   const mediaLinks  = [].concat(req.body.mediaLinks  || []).filter(Boolean);
@@ -429,6 +534,7 @@ app.post("/hire", preCrCode, upload.array("files", 20), async (req, res) => {
 
     const booking = new BookingRequest({
       crCode: req.crCode,
+      visitorId: req.visitorId,
       name,
       email,
       location,
@@ -801,6 +907,16 @@ app.get("/admin", requireAdmin, async (req, res) => {
       : [{ [ADMIN_SEARCH_FIELDS[field]]: re }];
   }
 
+  const dateFrom = (req.query.dateFrom || "").trim();
+  const dateTo = (req.query.dateTo || "").trim();
+  const fromDate = dateFrom ? new Date(`${dateFrom}T00:00:00Z`) : null;
+  const toDate = endOfDay(dateTo);
+  if ((fromDate && !isNaN(fromDate.getTime())) || toDate) {
+    filter.createdAt = {};
+    if (fromDate && !isNaN(fromDate.getTime())) filter.createdAt.$gte = fromDate;
+    if (toDate) filter.createdAt.$lte = toDate;
+  }
+
   const [total, pending] = await Promise.all([
     BookingRequest.countDocuments(filter),
     BookingRequest.countDocuments({ archived: { $ne: true }, status: "pending" }),
@@ -813,16 +929,35 @@ app.get("/admin", requireAdmin, async (req, res) => {
     .skip((page - 1) * ADMIN_PAGE_SIZE)
     .limit(ADMIN_PAGE_SIZE);
 
-  res.render("admin/dashboard", {
+  const locals = {
     bookings, total, pending, TIER_PRICES, ADDON_PRICES, archivedView,
     page, totalPages, pageSize: ADMIN_PAGE_SIZE, q, field, statusParam, STATUS_LABELS,
-  });
+    dateFrom, dateTo,
+  };
+
+  if (req.xhr) {
+    res.render("admin/_filter-summary", locals, (err, summaryHtml) => {
+      if (err) return res.status(500).end();
+      res.render("admin/_results-table", locals, (err2, tableHtml) => {
+        if (err2) return res.status(500).end();
+        res.json({ summaryHtml, tableHtml });
+      });
+    });
+    return;
+  }
+
+  res.render("admin/dashboard", locals);
 });
 
 app.get("/admin/booking/:id", requireAdmin, async (req, res) => {
   const booking = await BookingRequest.findById(req.params.id);
   if (!booking) return res.redirect("/admin");
-  res.render("admin/booking", { booking, stripeError: req.query.error || null });
+  res.render("admin/booking", {
+    booking,
+    stripeError: req.query.error || null,
+    deliverError: req.query.deliverError || null,
+    delivered: req.query.delivered ? parseInt(req.query.delivered, 10) : null,
+  });
 });
 
 async function notifyStatusChange(bookings, newStatus) {
@@ -882,35 +1017,44 @@ app.post("/admin/bookings/bulk-status", requireAdmin, async (req, res) => {
   res.redirect("/admin");
 });
 
-app.post("/admin/booking/:id/deliverables", requireAdmin, attachCrCode, deliverableUpload.array("files", 20), async (req, res) => {
+app.post("/admin/booking/:id/deliverables", requireAdmin, attachCrCode, (req, res, next) => {
+  deliverableUpload.array("files", 20)(req, res, (err) => {
+    if (!err) return next();
+    const message = err.code === "LIMIT_FILE_SIZE" ? "One or more files exceed the 250MB limit."
+      : err.code === "LIMIT_UNEXPECTED_FILE" ? "You can upload up to 20 files at a time."
+      : err.message || "Upload failed.";
+    res.redirect(`/admin/booking/${req.params.id}?deliverError=${encodeURIComponent(message)}`);
+  });
+}, async (req, res) => {
   const newFiles = (req.files || []).map((f) => ({
     originalName: f.originalname,
     storedName: f.filename,
     size: f.size,
     mimetype: f.mimetype,
   }));
-  if (newFiles.length > 0) {
-    const booking = await BookingRequest.findByIdAndUpdate(
-      req.params.id,
-      { $push: { deliverableFiles: { $each: newFiles } } },
-      { new: true }
-    );
-    if (booking && booking.clientId && booking.status === "completed") {
-      await Notification.create({
-        userId: booking.clientId,
-        bookingId: booking._id,
-        crCode: booking.crCode,
-        type: "deliverable_ready",
-        message: `Your final files are ready to download for project ${booking.crCode}.`,
-      });
-    }
+  if (newFiles.length === 0) {
+    return res.redirect(`/admin/booking/${req.params.id}?deliverError=${encodeURIComponent("No files were selected.")}`);
   }
-  res.redirect(`/admin/booking/${req.params.id}`);
+  const booking = await BookingRequest.findByIdAndUpdate(
+    req.params.id,
+    { $push: { deliverableFiles: { $each: newFiles } } },
+    { new: true }
+  );
+  if (booking && booking.clientId && booking.status === "completed") {
+    await Notification.create({
+      userId: booking.clientId,
+      bookingId: booking._id,
+      crCode: booking.crCode,
+      type: "deliverable_ready",
+      message: `Your final files are ready to download for project ${booking.crCode}.`,
+    });
+  }
+  res.redirect(`/admin/booking/${req.params.id}?delivered=${newFiles.length}`);
 });
 
 app.post("/admin/booking/:id/deliverables/:fileId/delete", requireAdmin, async (req, res) => {
   const booking = await BookingRequest.findById(req.params.id);
-  if (booking) {
+  if (booking && !booking.archived) {
     const file = booking.deliverableFiles.id(req.params.fileId);
     if (file) {
       fs.rm(path.join(__dirname, "uploads", booking.crCode, "files", "deliverables", file.storedName), { force: true }, () => {});
@@ -1383,6 +1527,14 @@ app.get("/track/:crCode/deliverables/:filename", async (req, res) => {
   if (!booking || !booking.deliverablesUnlocked) return res.sendStatus(403);
   if (trySendStoredFile(res, booking.crCode, "deliverables", filename)) return;
   res.sendStatus(404);
+});
+
+// Safety net for anything upstream that calls next(err) without its own handling
+// (e.g. a Multer error on a route without a bespoke wrapper) — avoids leaking a stack trace.
+app.use((err, req, res, next) => {
+  console.error(err);
+  if (res.headersSent) return next(err);
+  res.status(500).send("Something went wrong. Please go back and try again.");
 });
 
 app.listen(PORT, () => {

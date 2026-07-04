@@ -1,5 +1,40 @@
 # Journal
 
+## 2026-07-04 — Tiered Soft Limits on `/hire` (Guest vs. Account Holder)
+
+**What was built:**
+
+- The "Rate limiting on `/hire`" backlog item (`june26-milestone.md`) was redefined during scoping from hard rate-limiting into **product-level trust tiering**: guests (no logged-in account) get a smaller file allowance — **3 files max, 25MB each** — and are limited to **1 `/hire` submission per rolling 24 hours**; logged-in account holders keep today's 20 files / 250MB with no submission cap.
+- A new `assignVisitorId` middleware (global, ahead of `session(...)`) sets a long-lived (`jrmr_vid`, ~1 year, `httpOnly`, `sameSite: lax`) anonymous visitor cookie for every site visitor, not just guests, via `crypto.randomUUID()`. `BookingRequest` gained a matching `visitorId` field, populated on every booking (guest or account holder) — cheap to store universally and keeps the field meaningful if a future "returning client" tier gets added.
+- `enforceGuestSubmissionQuota` — a new pre-upload middleware — checks `BookingRequest.exists({ visitorId, createdAt: { $gte: 24h ago } })` for guests only (`req.session.userId` bypasses it entirely) and renders `hire.ejs` with an error if one's already landed in the window. It runs *before* `preCrCode` and before multer touches the request, so an over-quota guest costs nothing — no BR code generated, no bytes uploaded, nothing to clean up on rejection.
+- A second multer instance, `uploadGuest`, shares the existing `storage`/`fileFilter` but caps `limits.fileSize` at 25MB (multer's file-size limit is fixed at construction, so a distinct instance was needed for the tier); file *count* just uses a smaller `.array("files", N)` argument at the guest call site, no second instance required for that part. `POST /hire`'s multer-error branch now gives tier-specific messages ("Guests can upload up to 3 files... create a free account to upload more" vs. the existing member-tier text).
+- Added `cookie-parser` as a new dependency — nothing previously parsed `req.cookies` (only `express-session` handled cookies internally, without exposing them).
+
+**Decisions made:**
+
+- Chose a dedicated anonymous cookie over keying the guest quota on email or IP — email is trivially varied and IP risks false positives on shared/office/NAT connections; a cookie is a deliberate soft deterrent, not hard security, and clearing it is an accepted way to reset the guest quota.
+- Two tiers only for now (guest vs. account holder) — a "returning client" tier (e.g. ≥1 completed project) was discussed as a natural future extension but explicitly scoped out; all tier-dependent constants live in one block in `server.js` so adding a third tier later only touches that block plus the two decision points in the `POST /hire` chain (quota check, multer instance choice).
+- No index added on `visitorId` — this codebase's only existing indexes are the `unique: true` on `crCode`/`email`; at current booking volume an unindexed `exists()` scan is negligible. Flagged a compound `{ visitorId: 1, createdAt: -1 }` index as an easy follow-up if volume grows.
+- Verified end-to-end against the live dev server: fresh guest cookie set on first `/hire` load; guest submission with ≤3 files/≤25MB succeeds; immediate resubmission blocked with the 24h message before reaching multer; a 30MB file and a 4th file both correctly rejected with guest-specific messages; clearing the cookie resets the quota (by design); a logged-in account holder submitted twice in a row with no cap and successfully uploaded a 30MB file (under the 250MB member cap); `visitorId` confirmed present on both guest and account-holder bookings.
+
+---
+
+## 2026-07-04 — Admin Dashboard: Date Range Filter
+
+**What was built:**
+
+- `/admin` gained `dateFrom`/`dateTo` query params, filtering the same `BookingRequest.find(filter)` used by search/status/pagination on `createdAt`. `dateFrom` parses as UTC midnight of the typed day; `dateTo` reuses the existing `endOfDay()` helper (`server.js:17`) so the upper bound is inclusive of the whole selected day — consistent with how due dates are already parsed elsewhere in this file.
+- Two native `<input type="date">` pickers added next to the search bar in `admin/dashboard.ejs`, wired to the existing `navigateSearch()` JS (no debounce — date pickers don't fire per-keystroke like the text search does). Each input's `min`/`max` is bound to the other's current value so an invalid inverted range can't be picked from the UI; a clear (×) button appears only when a range is active.
+- `statusLink()` and `pageUrl()` (the URL-builders behind status pills and pagination) now also carry `dateFrom`/`dateTo`, so switching a status filter or page doesn't silently drop an active date range. The empty-state message ("No matching requests") now also triggers when a date filter yields zero rows, not just search/status.
+
+**Decisions made:**
+- Filtered on `createdAt` (submission date), not `updatedAt` — matches the backlog item's own wording ("filter bookings by submission date") and the column already shown as "Date" in the table.
+- Reused `endOfDay()` rather than adding a new date-parsing helper, since the semantics (UTC end-of-day, same-day-typed = included) already matched what was needed here.
+
+Verified against the live server: seeded booking created 2026-07-02; a `2026-07-01`–`2026-07-03` range and an exact same-day `2026-07-02`–`2026-07-02` range both correctly return it; `dateFrom=2026-07-03` alone and `dateTo=2026-07-01` alone both correctly return zero. Confirmed status-pill links and the date inputs' own values correctly retain the active range across navigation.
+
+---
+
 ## 2026-07-03 — Deliverable Download: Review Fixes
 
 **What was built:** A multi-angle review of the deliverable-download feature (same day, see entry below) surfaced two real bugs and several duplication/efficiency nits, all fixed:

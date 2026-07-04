@@ -23,11 +23,11 @@
 
 ### Admin QoL
 - [ ] Bulk status update on dashboard — update multiple bookings at once as volume grows
-- [ ] Date range filter on dashboard — filter bookings by submission date
+- [x] **Date range filter on dashboard** — `dateFrom`/`dateTo` query params on `/admin` filter bookings by `createdAt` (inclusive, UTC calendar days, reusing the existing `endOfDay()` helper for the upper bound). Two native `<input type="date">` pickers sit next to the search bar, cross-constrain each other via `min`/`max`, and navigate immediately on change (same pattern as the field/status controls); a clear (×) button appears only when a range is active. All existing links that carry filter state (status pills, pagination) now also carry `dateFrom`/`dateTo`.
 
 ### Reliability
-- [ ] Rate limiting on `/hire` — prevent spam submissions
-- [ ] Server-side file type validation on upload — currently only file size is checked; restrict to allowed MIME types
+- [x] **Tiered soft limits on `/hire`** — redefined from hard rate-limiting into product-level tiering by trust: guests (no account) are capped at 3 files / 25MB each and 1 submission per rolling 24h, vs. 20 files / 250MB and no cap for logged-in account holders. The 24h guest cap is keyed on a long-lived (`jrmr_vid`, ~1yr) anonymous visitor cookie set for every site visitor (`assignVisitorId` middleware) and stored on every `BookingRequest` (`visitorId` field) regardless of tier — chosen over email/IP to avoid shared-IP false positives and not rely on a user-typed field. `enforceGuestSubmissionQuota` runs before `preCrCode`/multer so an over-quota guest costs nothing (no BR code generated, no bytes uploaded). A second `uploadGuest` multer instance (same storage/fileFilter, smaller `limits.fileSize`) provides the guest file-size cap; file count is just a smaller `.array("files", N)` argument at the guest call site.
+- [x] **Server-side file type validation on upload** — `/hire`'s two multer instances (`upload`/`uploadGuest`) gained `restrictToAllowedMediaTypes`, an allowlist `fileFilter` matching the upload widget's own `accept` attribute (video/audio/image MIME prefixes, plus `.zip`/`.rar` archives — the latter checked by extension since archive MIME types are inconsistent across browsers). Chained ahead of the existing `rejectDangerousFiles` HTML/SVG blocklist rather than replacing it. Admin's `deliverableUpload` intentionally kept on the blocklist only, since admin is trusted to hand back whatever final file type a project needs.
 - [ ] Graceful BR code collision handling — surface a clean error if the pre-save loop somehow fails instead of crashing
 
 ### Growth

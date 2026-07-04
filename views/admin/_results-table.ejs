@@ -1,0 +1,206 @@
+<%
+  function pageUrl(p) {
+    const params = new URLSearchParams();
+    if (archivedView) params.set('view', 'archived');
+    if (q) params.set('q', q);
+    if (field !== 'all') params.set('field', field);
+    if (statusParam !== 'all') params.set('status', statusParam);
+    if (dateFrom) params.set('dateFrom', dateFrom);
+    if (dateTo) params.set('dateTo', dateTo);
+    if (p > 1) params.set('page', p);
+    const qs = params.toString();
+    return '/admin' + (qs ? '?' + qs : '');
+  }
+%>
+
+<!-- Bulk action bar -->
+<% if (!archivedView) { %>
+<form id="bulk-form" action="/admin/bookings/bulk-archive" method="POST">
+  <div id="bulk-bar">
+    <span id="bulk-count" class="text-sm text-gray-400"></span>
+    <div class="relative" id="bulk-status-dropdown">
+      <button type="button" id="bulk-status-btn" onclick="toggleBulkStatusDropdown()"
+        class="flex items-center gap-2 bg-white/[0.04] border border-white/10 rounded-lg px-3 py-1.5 text-sm text-gray-300 hover:border-white/20 hover:text-white transition-colors whitespace-nowrap">
+        <span id="bulk-status-label">Set status…</span>
+        <svg id="bulk-status-chevron" class="w-3.5 h-3.5 text-gray-500 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div id="bulk-status-menu"
+        class="hidden absolute left-0 bottom-full mb-1.5 z-50 min-w-[160px] bg-[#111] border border-white/10 rounded-xl overflow-hidden shadow-xl whitespace-normal">
+        <% Object.entries(STATUS_LABELS).forEach(([value, label]) => { %>
+        <button type="button"
+          class="bulk-status-option w-full text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors"
+          data-value="<%= value %>" data-label="<%= label %>"
+          onclick="selectBulkStatus(this)">
+          <%= label %>
+        </button>
+        <% }) %>
+      </div>
+      <input type="hidden" id="bulk-status-value" value="" />
+    </div>
+    <button type="button" onclick="submitBulkStatus()"
+      class="flex items-center gap-1.5 text-sm font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-amber-500/10">
+      <iconify-icon icon="material-symbols-light:sync-alt" width="20" height="20"></iconify-icon>
+      Apply
+    </button>
+    <div style="width:1px;height:20px;background:rgba(255,255,255,0.08);"></div>
+    <button type="submit" onclick="return confirmBulkArchive()"
+      class="flex items-center gap-1.5 text-sm font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-amber-500/10">
+      <iconify-icon icon="material-symbols-light:archive" width="20" height="20"></iconify-icon>
+      Archive selected
+    </button>
+    <div style="width:1px;height:20px;background:rgba(255,255,255,0.08);"></div>
+    <button type="button" onclick="adminClearSelection()" title="Clear selection"
+      style="display:inline-flex;align-items:center;padding:6px;border-radius:8px;border:none;background:transparent;color:#6b7280;cursor:pointer;transition:color 0.15s;"
+      onmouseover="this.style.color='#9ca3af'" onmouseout="this.style.color='#6b7280'">
+      <iconify-icon icon="material-symbols-light:close" width="20" height="20"></iconify-icon>
+    </button>
+  </div>
+  <div id="hidden-ids"></div>
+</form>
+<% } %>
+
+<!-- Table -->
+<% if (bookings.length === 0) { %>
+<div class="text-center py-24 text-gray-600">
+  <p class="text-4xl mb-4">📭</p>
+  <% if (q || statusParam !== 'all' || dateFrom || dateTo) { %>
+  <p class="text-lg font-medium text-gray-500">No matching requests</p>
+  <p class="text-sm mt-1">Try a different search term or filter.</p>
+  <% } else { %>
+  <p class="text-lg font-medium text-gray-500">No requests yet</p>
+  <p class="text-sm mt-1">Booking submissions will appear here.</p>
+  <% } %>
+</div>
+<% } else { %>
+<div class="rounded-2xl border border-white/8 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b border-white/5 text-left">
+        <% if (archivedView) { %>
+        <th class="row-cb"></th>
+        <% } else { %>
+        <th class="row-cb">
+          <iconify-icon id="select-all-cb" icon="material-symbols-light:check-box-outline-blank" width="20" height="20" class="cb-icon" onclick="toggleSelectAll()"></iconify-icon>
+        </th>
+        <% } %>
+        <th class="thumb-cell"></th>
+        <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">BR Code</th>
+        <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Client</th>
+        <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Location</th>
+        <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Services</th>
+        <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Package</th>
+        <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Est. Cost</th>
+        <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+        <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Date</th>
+        <% if (archivedView) { %>
+        <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+        <% } %>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-white/5">
+      <% bookings.forEach(b => { %>
+      <tr class="row-link"
+        data-id="<%= b._id %>"
+        onclick="rowClick(event, '<%= b._id %>', '/admin/booking/<%= b._id %>')" style="cursor:pointer;">
+        <% if (archivedView) { %>
+        <td class="row-cb"></td>
+        <% } else { %>
+        <td class="row-cb" onclick="event.stopPropagation()">
+          <iconify-icon icon="material-symbols-light:check-box-outline-blank" width="20" height="20" class="cb-icon" onclick="toggleRow(this, '<%= b._id %>')"></iconify-icon>
+        </td>
+        <% } %>
+        <td class="thumb-cell">
+          <% const _vf = b.uploadedFiles && b.uploadedFiles.find(f => f.mimetype && f.mimetype.startsWith('video/')); %>
+          <% const _if = !_vf && b.uploadedFiles && b.uploadedFiles.find(f => f.mimetype && f.mimetype.startsWith('image/')); %>
+          <% if (b.filesDeleted) { %>
+          <div class="thumb-wrap" style="flex-direction:column;gap:2px;" title="Client permanently deleted the uploaded files">
+            <iconify-icon icon="material-symbols-light:delete-outline" width="16" height="16" class="thumb-placeholder"></iconify-icon>
+            <span style="font-size:8px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#f87171;">deleted</span>
+          </div>
+          <% } else { %>
+          <div class="thumb-wrap">
+            <% if (_vf) { %>
+              <video src="/admin/uploads/<%= _vf.storedName %>" class="project-thumb" muted preload="metadata"></video>
+            <% } else if (_if) { %>
+              <img src="/admin/uploads/<%= _if.storedName %>" class="project-thumb" alt="" />
+            <% } else { %>
+              <iconify-icon icon="material-symbols-light:movie" width="20" height="20" class="thumb-placeholder"></iconify-icon>
+            <% } %>
+          </div>
+          <% } %>
+        </td>
+        <td class="px-5 py-4 font-mono text-amber-400 font-semibold text-xs whitespace-nowrap"><%= b.crCode %></td>
+        <td class="px-5 py-4">
+          <p class="text-white font-medium"><%= b.name %></p>
+          <p class="text-gray-500 text-xs mt-0.5"><%= b.email %></p>
+        </td>
+        <td class="px-5 py-4 hidden lg:table-cell text-gray-400 whitespace-nowrap"><%= b.location %></td>
+        <td class="px-5 py-4 hidden md:table-cell text-gray-300 whitespace-nowrap"><%= b.serviceType.join(', ') %></td>
+        <td class="px-5 py-4 hidden lg:table-cell text-gray-400">
+          <% if (b.pricingTier === 'Custom' && b.budget) { %>
+            <span class="text-amber-400 font-semibold"><%= b.budget %></span>
+            <span class="text-gray-600 text-xs ml-1">Custom</span>
+          <% } else { %>
+            <%= b.pricingTier %>
+          <% } %>
+        </td>
+        <td class="px-5 py-4 hidden lg:table-cell font-variant-numeric tabular-nums text-sm">
+          <%
+            const _est = b.agreedPrice
+              ? b.agreedPrice
+              : (TIER_PRICES[b.pricingTier] || 0) + (b.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0) - (b.discountAmount || 0);
+            const _confirmed = !!b.agreedPrice;
+          %>
+          <% if (_est > 0) { %>
+            <span class="<%= _confirmed ? 'text-white' : 'text-gray-500' %>">
+              <%= _confirmed ? '' : '~' %>$<%= _est.toFixed(2) %>
+            </span>
+          <% } else { %>
+            <span class="text-gray-600">—</span>
+          <% } %>
+        </td>
+        <td class="px-5 py-4">
+          <span class="status-badge status-<%= b.status %>"><%= b.status %></span>
+        </td>
+        <td class="px-5 py-4 hidden sm:table-cell text-gray-500 text-xs whitespace-nowrap">
+          <%= new Date(b.createdAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) %>
+        </td>
+        <% if (archivedView) { %>
+        <td class="px-5 py-4 text-right" onclick="event.stopPropagation()">
+          <% if (b.filesDeleted) { %>
+          <span class="inline-flex items-center text-xs font-semibold text-red-400 px-3 py-1.5" title="Client permanently deleted this project — it cannot be restored">
+            Deleted
+          </span>
+          <% } else { %>
+          <form action="/admin/booking/<%= b._id %>/restore" method="POST">
+            <button type="submit"
+              class="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-amber-500/10">
+              <iconify-icon icon="material-symbols-light:restore" width="16" height="16"></iconify-icon>
+              Restore
+            </button>
+          </form>
+          <% } %>
+        </td>
+        <% } %>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
+
+<% if (totalPages > 1) { %>
+<div class="flex items-center justify-between mt-6">
+  <% if (page > 1) { %>
+  <a href="<%= pageUrl(page - 1) %>" class="page-link text-sm font-semibold text-gray-400 hover:text-white transition-colors px-4 py-2 rounded-lg border border-white/10 hover:border-white/25">← Previous</a>
+  <% } else { %>
+  <span class="text-sm font-semibold text-gray-700 px-4 py-2 rounded-lg border border-white/5">← Previous</span>
+  <% } %>
+  <span class="text-sm text-gray-500">Page <%= page %> of <%= totalPages %></span>
+  <% if (page < totalPages) { %>
+  <a href="<%= pageUrl(page + 1) %>" class="page-link text-sm font-semibold text-gray-400 hover:text-white transition-colors px-4 py-2 rounded-lg border border-white/10 hover:border-white/25">Next →</a>
+  <% } else { %>
+  <span class="text-sm font-semibold text-gray-700 px-4 py-2 rounded-lg border border-white/5">Next →</span>
+  <% } %>
+</div>
+<% } %>
+<% } %>

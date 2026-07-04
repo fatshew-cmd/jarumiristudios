@@ -1,0 +1,45 @@
+<%
+  function statusLink(s) {
+    let next;
+    if (s === 'all') {
+      next = 'all';
+    } else {
+      let cur = statusParam === 'all' ? [] : statusParam.split(',').filter(Boolean);
+      cur = cur.includes(s) ? cur.filter(x => x !== s) : [...cur, s];
+      next = cur.length ? cur.join(',') : 'all';
+    }
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (field !== 'all') params.set('field', field);
+    if (next !== 'all') params.set('status', next);
+    if (dateFrom) params.set('dateFrom', dateFrom);
+    if (dateTo) params.set('dateTo', dateTo);
+    const qs = params.toString();
+    return '/admin' + (qs ? '?' + qs : '');
+  }
+  const selectedStatuses = statusParam === 'all' ? ['all'] : statusParam.split(',').filter(Boolean);
+%>
+<div>
+  <h1 class="text-2xl font-bold text-white"><%= archivedView ? 'Archived requests' : 'Booking requests' %></h1>
+  <p class="text-gray-500 text-sm mt-1">
+    <% if (total > 0) { %>
+      Showing <%= (page - 1) * pageSize + 1 %>–<%= Math.min(page * pageSize, total) %> of <%= total %>
+    <% } else { %>
+      0 total
+    <% } %>
+  </p>
+</div>
+<% if (!archivedView) { %>
+<div class="flex gap-2 flex-wrap" id="filter-bar">
+  <a href="<%= statusLink('all') %>"
+    class="filter-btn text-xs font-semibold px-4 py-2 rounded-full border transition-colors <%= selectedStatuses.includes('all') ? 'bg-amber-400 text-black border-amber-400' : 'border-white/10 text-gray-400 hover:border-white/25 hover:text-white' %>">
+    All
+  </a>
+  <% ['pending','in-review','accepted','declined'].forEach(s => { %>
+  <a href="<%= statusLink(s) %>"
+    class="filter-btn text-xs font-semibold px-4 py-2 rounded-full border transition-colors <%= selectedStatuses.includes(s) ? 'bg-amber-400 text-black border-amber-400' : 'border-white/10 text-gray-400 hover:border-white/25 hover:text-white' %>">
+    <%= s.charAt(0).toUpperCase() + s.slice(1) %>
+  </a>
+  <% }) %>
+</div>
+<% } %>
