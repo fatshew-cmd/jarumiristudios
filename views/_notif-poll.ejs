@@ -2,6 +2,8 @@
 (function () {
   var lastSeen = Date.now();
   var isNotifPage = window.location.pathname === '/dashboard/notifications';
+  var bookingPageMatch = window.location.pathname.match(/^\/dashboard\/booking\/([a-f0-9]+)$/);
+  var currentBookingId = bookingPageMatch ? bookingPageMatch[1] : null;
 
   var ICONS = {
     status_change:     { icon: 'material-symbols-light:autorenew',      cls: 'status',  color: '#818cf8' },
@@ -78,6 +80,14 @@
       updateBadge(data.unreadCount);
 
       if (!data.items.length) return;
+
+      var paidForThisBooking = currentBookingId && data.items.some(function (n) {
+        return n.type === 'payment_confirmed' && n.bookingId === currentBookingId;
+      });
+      if (paidForThisBooking) {
+        location.reload();
+        return;
+      }
 
       if (isNotifPage) {
         prependToList(data.items);

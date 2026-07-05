@@ -487,8 +487,15 @@
     }
 
     // ── Single-row actions ──
-    function deleteProject(id, code) {
-      if (!confirm(`Delete project ${code}? Uploaded files will be permanently removed. This cannot be undone.`)) return;
+    async function deleteProject(id, code) {
+      const ok = await showConfirm({
+        title: `Delete project ${code}?`,
+        message: 'Uploaded files will be permanently removed.',
+        detail: 'This cannot be undone.',
+        confirmLabel: 'Delete',
+        tone: 'danger',
+      });
+      if (!ok) return;
       fetch(`/dashboard/booking/${id}/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
         .then(r => r.ok ? location.reload() : alert('Could not delete project.'))
         .catch(() => alert('Could not delete project.'));
@@ -511,12 +518,19 @@
     }
 
     // ── Bulk actions ──
-    function bulkDelete() {
+    async function bulkDelete() {
       const ids = [...clientChecked];
       if (!ids.length) return;
       const rows = ids.map(id => document.querySelector(`tr[data-id="${id}"]`));
       const codes = rows.map(r => r ? r.dataset.crcode : id).join(', ');
-      if (!confirm(`Delete ${ids.length} project(s)?\n${codes}\n\nUploaded files will be permanently removed. This cannot be undone.`)) return;
+      const ok = await showConfirm({
+        title: `Delete ${ids.length} project(s)?`,
+        message: 'Uploaded files will be permanently removed.',
+        detail: codes + '\n\nThis cannot be undone.',
+        confirmLabel: 'Delete',
+        tone: 'danger',
+      });
+      if (!ok) return;
       Promise.all(ids.map(id =>
         fetch(`/dashboard/booking/${id}/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
       )).then(() => location.reload());
@@ -555,6 +569,7 @@
   </script>
 
   <%- include('_toast') %>
+  <%- include('_confirm-modal') %>
   <%- include('_notif-poll') %>
   <% if (locals.submitted) { %>
   <script>showToast('Project submitted!', 'Request <code style="font-family:monospace;background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:4px;font-size:12px;color:#e5e7eb"><%= submitted %></code> received — we\'ll be in touch soon.');</script>

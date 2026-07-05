@@ -31,6 +31,7 @@
       flex-shrink: 0; margin-top: 1px;
     }
     .notif-icon.nudge { background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.2); }
+    .notif-icon.payment { background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.2); }
 
     .unread-dot {
       width: 7px; height: 7px; border-radius: 50%;
@@ -67,13 +68,18 @@
         <iconify-icon icon="material-symbols-light:notifications-off" width="22" height="22" class="text-gray-700"></iconify-icon>
       </div>
       <p class="text-gray-600 text-sm">No notifications yet.</p>
-      <p class="text-gray-700 text-xs mt-1">You'll be notified here when a client nudges you.</p>
+      <p class="text-gray-700 text-xs mt-1">You'll be notified here for client nudges and incoming payments.</p>
     </div>
 
     <% } else { %>
     <div id="notif-list" class="border border-white/5 rounded-md overflow-hidden bg-[#0d0d0d]">
-      <% notifications.forEach(n => {
+      <% const NOTIF_ICONS = {
+        nudge:   { icon: 'material-symbols-light:notifications-active', cls: 'nudge',   color: '#818cf8' },
+        payment: { icon: 'material-symbols-light:payments',             cls: 'payment', color: '#34d399' },
+      };
+      notifications.forEach(n => {
         const isUnread = !n.read;
+        const ic = NOTIF_ICONS[n.type] || NOTIF_ICONS.nudge;
         const date = new Date(n.createdAt);
         const now = new Date();
         const diffMs = now - date;
@@ -88,8 +94,8 @@
         else                     timeLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       %>
       <div class="notif-row <%= isUnread ? 'unread' : '' %>">
-        <div class="notif-icon nudge">
-          <iconify-icon icon="material-symbols-light:notifications-active" width="17" height="17" style="color:#818cf8"></iconify-icon>
+        <div class="notif-icon <%= ic.cls %>">
+          <iconify-icon icon="<%= ic.icon %>" width="17" height="17" style="color:<%= ic.color %>"></iconify-icon>
         </div>
         <div class="flex-1 min-w-0">
           <p class="text-sm text-gray-200 leading-snug"><%= n.message %></p>

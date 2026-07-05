@@ -39,7 +39,7 @@
       font-size: 14px;
       font-family: 'Inter', sans-serif;
       outline: none;
-      resize: vertical;
+      resize: none;
       transition: border-color 0.2s ease;
     }
     textarea:focus { border-color: rgba(245,158,11,0.5); }
@@ -468,9 +468,16 @@
     <div class="space-y-5 lg:sticky lg:top-5">
 
     <!-- Payment status (only show when relevant) -->
-    <% if (booking.depositStatus && booking.depositStatus !== 'none') { %>
+    <% if (booking.depositStatus && booking.depositStatus !== 'none') {
+      const finalActive = booking.finalPaymentStatus && booking.finalPaymentStatus !== 'none';
+    %>
     <div class="section-card">
-      <h2 class="text-sm font-semibold text-white mb-4">Payment</h2>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-white">Payment</h2>
+        <% if (booking.agreedPrice) { %>
+        <span class="text-sm font-bold text-white">$<%= booking.agreedPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) %></span>
+        <% } %>
+      </div>
       <div class="space-y-3">
         <!-- Deposit -->
         <div class="flex items-center justify-between gap-4">
@@ -484,53 +491,60 @@
             </div>
             <div>
               <p class="text-sm text-white font-medium">Deposit (30%)</p>
-              <p class="text-xs text-gray-500"><%= booking.depositStatus === 'paid' ? 'Paid — work has begun' : 'Invoice sent — check your email' %></p>
+              <p class="text-xs text-gray-500">
+                <% if (booking.depositStatus === 'paid') { %>
+                  Paid — work has begun
+                <% } else if (booking.depositDueDate) { %>
+                  Due by <%= new Date(booking.depositDueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %>
+                <% } else { %>
+                  Invoice sent — check your email
+                <% } %>
+              </p>
             </div>
           </div>
           <% if (booking.agreedPrice) { %>
           <span class="text-sm font-semibold text-white shrink-0">$<%= (booking.agreedPrice * 0.30).toFixed(2) %></span>
           <% } %>
         </div>
-        <% if (booking.depositStatus === 'pending' && booking.depositInvoiceUrl) { %>
-        <a href="<%= booking.depositInvoiceUrl %>" target="_blank" rel="noopener"
-          class="block text-center px-4 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
-          Pay deposit now
-        </a>
-        <% } %>
-
-        <!-- Final -->
-        <% if (booking.finalPaymentStatus && booking.finalPaymentStatus !== 'none') { %>
+        <!-- Final (grayed out until the final invoice has actually been sent) -->
         <div class="flex items-center justify-between gap-4">
           <div class="flex items-center gap-3">
-            <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 ring-1 <%= booking.finalPaymentStatus === 'paid' ? 'bg-green-500/15 ring-green-500/25' : 'bg-amber-400/10 ring-amber-400/20' %>">
+            <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 ring-1 <%= booking.finalPaymentStatus === 'paid' ? 'bg-green-500/15 ring-green-500/25' : finalActive ? 'bg-amber-400/10 ring-amber-400/20' : 'bg-white/5 ring-white/10' %>">
               <% if (booking.finalPaymentStatus === 'paid') { %>
               <iconify-icon icon="material-symbols-light:check" width="14" height="14" class="text-green-400"></iconify-icon>
               <% } else { %>
-              <iconify-icon icon="material-symbols-light:schedule" width="14" height="14" class="text-amber-400"></iconify-icon>
+              <iconify-icon icon="material-symbols-light:schedule" width="14" height="14" class="<%= finalActive ? 'text-amber-400' : 'text-gray-500' %>"></iconify-icon>
               <% } %>
             </div>
-            <div>
+            <div class="<%= finalActive ? '' : 'opacity-40' %>">
               <p class="text-sm text-white font-medium">Final payment (70%)</p>
-              <p class="text-xs text-gray-500"><%= booking.finalPaymentStatus === 'paid' ? 'Paid — project complete' : 'Invoice sent — check your email' %></p>
+              <p class="text-xs text-gray-500">
+                <% if (booking.finalPaymentStatus === 'paid') { %>
+                  Paid — project complete
+                <% } else if (booking.finalDueDate) { %>
+                  Due by <%= new Date(booking.finalDueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %>
+                <% } else if (finalActive) { %>
+                  Invoice sent — check your email
+                <% } else { %>
+                  Once the deposit is paid
+                <% } %>
+              </p>
             </div>
           </div>
           <% if (booking.agreedPrice) { %>
-          <span class="text-sm font-semibold text-white shrink-0">$<%= (booking.agreedPrice * 0.70).toFixed(2) %></span>
+          <span class="text-sm font-semibold text-white shrink-0 <%= finalActive ? '' : 'opacity-40' %>">$<%= (booking.agreedPrice * 0.70).toFixed(2) %></span>
           <% } %>
         </div>
-        <% if (booking.finalPaymentStatus === 'pending' && booking.finalInvoiceUrl) { %>
+        <% if (booking.depositStatus === 'pending' && booking.depositInvoiceUrl) { %>
+        <a href="<%= booking.depositInvoiceUrl %>" target="_blank" rel="noopener"
+          class="block text-center px-4 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
+          Pay deposit now<% if (booking.agreedPrice) { %> — $<%= (booking.agreedPrice * 0.30).toFixed(2) %><% } %>
+        </a>
+        <% } else if (booking.finalPaymentStatus === 'pending' && booking.finalInvoiceUrl) { %>
         <a href="<%= booking.finalInvoiceUrl %>" target="_blank" rel="noopener"
           class="block text-center px-4 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
-          Pay final invoice now
+          Pay final invoice now<% if (booking.agreedPrice) { %> — $<%= (booking.agreedPrice * 0.70).toFixed(2) %><% } %>
         </a>
-        <% } %>
-        <% } %>
-
-        <% if (booking.agreedPrice) { %>
-        <div class="border-t border-white/5 pt-3 flex justify-between items-center">
-          <span class="text-xs text-gray-500 font-medium uppercase tracking-widest">Total</span>
-          <span class="text-base font-bold text-white">$<%= booking.agreedPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) %></span>
-        </div>
         <% } %>
       </div>
     </div>
@@ -544,7 +558,7 @@
       <form action="/dashboard/booking/<%= booking._id %>/revision" method="POST">
         <textarea name="message" rows="4" placeholder="Describe the revision you need..." required></textarea>
         <button type="submit"
-          class="mt-3 px-6 py-3 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
+          class="block w-full mt-3 px-6 py-3 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
           Submit revision request
         </button>
       </form>

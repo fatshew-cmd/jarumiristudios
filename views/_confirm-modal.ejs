@@ -1,0 +1,95 @@
+<div id="confirm-modal-overlay" class="fixed inset-0 z-9998 hidden items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+  <div id="confirm-modal" class="w-100 max-w-full rounded-xl border border-white/10 bg-[#1a1a1a] shadow-2xl p-6" role="alertdialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+    <div class="flex items-start gap-3.5">
+      <div id="confirm-modal-icon" class="w-9 h-9 rounded-full border flex items-center justify-center shrink-0">
+        <iconify-icon id="confirm-modal-icon-glyph" width="18" height="18"></iconify-icon>
+      </div>
+      <div class="flex-1 min-w-0 pt-0.5">
+        <h3 id="confirm-modal-title" class="text-[15px] font-semibold text-white"></h3>
+        <p id="confirm-modal-message" class="text-sm text-gray-400 mt-1 leading-relaxed"></p>
+        <p id="confirm-modal-detail" class="text-xs text-gray-500 mt-2 leading-relaxed wrap-break-word whitespace-pre-line"></p>
+      </div>
+    </div>
+    <div class="flex justify-end gap-2 mt-6">
+      <button id="confirm-modal-cancel" type="button" class="text-sm font-semibold px-4 py-2 rounded-lg text-gray-300 hover:bg-white/6 transition-colors cursor-pointer">Cancel</button>
+      <button id="confirm-modal-confirm" type="button" class="text-sm font-semibold px-4 py-2 rounded-lg transition-colors cursor-pointer"></button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const overlay   = document.getElementById('confirm-modal-overlay');
+  const iconWrap  = document.getElementById('confirm-modal-icon');
+  const iconGlyph = document.getElementById('confirm-modal-icon-glyph');
+  const titleEl   = document.getElementById('confirm-modal-title');
+  const messageEl = document.getElementById('confirm-modal-message');
+  const detailEl  = document.getElementById('confirm-modal-detail');
+  const cancelBtn = document.getElementById('confirm-modal-cancel');
+  const confirmBtn = document.getElementById('confirm-modal-confirm');
+
+  const THEMES = {
+    danger: {
+      icon: 'bg-red-500/15 border-red-500/25 text-red-400',
+      glyph: 'material-symbols-light:warning',
+      confirmBtn: 'bg-red-500/15 border border-red-500/25 text-red-300 hover:bg-red-500/25',
+    },
+    warn: {
+      icon: 'bg-amber-500/15 border-amber-500/25 text-amber-400',
+      glyph: 'material-symbols-light:pause-circle',
+      confirmBtn: 'bg-amber-500/15 border border-amber-500/25 text-amber-300 hover:bg-amber-500/25',
+    },
+  };
+
+  let resolvePromise = null;
+  let lastFocused = null;
+
+  function close(result) {
+    overlay.classList.add('hidden');
+    overlay.classList.remove('flex');
+    document.removeEventListener('keydown', onKeydown);
+    if (lastFocused && lastFocused.focus) lastFocused.focus();
+    const resolve = resolvePromise;
+    resolvePromise = null;
+    if (resolve) resolve(result);
+  }
+
+  function onKeydown(e) {
+    if (e.key === 'Escape') close(false);
+    if (e.key === 'Enter') close(true);
+  }
+
+  cancelBtn.addEventListener('click', () => close(false));
+  confirmBtn.addEventListener('click', () => close(true));
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(false); });
+
+  window.showConfirm = function (opts) {
+    opts = opts || {};
+    const theme = THEMES[opts.tone] || THEMES.danger;
+
+    titleEl.textContent = opts.title || 'Are you sure?';
+    messageEl.textContent = opts.message || '';
+    if (opts.detail) {
+      detailEl.textContent = opts.detail;
+      detailEl.style.display = '';
+    } else {
+      detailEl.style.display = 'none';
+    }
+
+    iconWrap.className = 'w-9 h-9 rounded-full border flex items-center justify-center shrink-0 ' + theme.icon;
+    iconGlyph.setAttribute('icon', theme.glyph);
+
+    confirmBtn.textContent = opts.confirmLabel || 'Confirm';
+    confirmBtn.className = 'text-sm font-semibold px-4 py-2 rounded-lg transition-colors cursor-pointer ' + theme.confirmBtn;
+    cancelBtn.textContent = opts.cancelLabel || 'Cancel';
+
+    lastFocused = document.activeElement;
+    overlay.classList.remove('hidden');
+    overlay.classList.add('flex');
+    document.addEventListener('keydown', onKeydown);
+    confirmBtn.focus();
+
+    return new Promise((resolve) => { resolvePromise = resolve; });
+  };
+}());
+</script>

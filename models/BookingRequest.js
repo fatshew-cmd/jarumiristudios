@@ -57,7 +57,14 @@ const bookingRequestSchema = new mongoose.Schema(
     depositReminderSent: { type: Boolean, default: false },
     finalReminderSent: { type: Boolean, default: false },
     deliveryDate: { type: Date },
-    couponCode: { type: String },
+    couponCodes: [
+      {
+        code: { type: String },
+        discountType: { type: String, enum: ["percent", "fixed"] },
+        discountValue: { type: Number },
+        amount: { type: Number },
+      },
+    ],
     discountAmount: { type: Number, default: 0 },
     clientId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     revisions: [

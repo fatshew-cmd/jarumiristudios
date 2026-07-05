@@ -95,12 +95,9 @@ app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (r
           if (invoice.id === booking.depositInvoiceId) {
             booking.depositStatus = "paid";
             paymentType = "deposit";
-            if (isInactive) {
-              notifMsg = `We received your deposit payment for project ${booking.crCode}. We'll follow up shortly to confirm next steps.`;
-            } else {
-              booking.status = "in-progress";
-              notifMsg = `Deposit payment confirmed for project ${booking.crCode}. Work has begun!`;
-            }
+            notifMsg = isInactive
+              ? `We received your deposit payment for project ${booking.crCode}. We'll follow up shortly to confirm next steps.`
+              : `Deposit payment received for project ${booking.crCode}. We'll confirm and begin work shortly.`;
           } else if (invoice.id === booking.finalInvoiceId) {
             booking.finalPaymentStatus = "paid";
             paymentType = "final";
@@ -130,6 +127,17 @@ app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (r
               crCode: booking.crCode,
               type: "payment_confirmed",
               message: notifMsg,
+            });
+          }
+          if (paymentType === "deposit") {
+            const depositAmount = (invoice.amount_paid / 100).toFixed(2);
+            await AdminNotification.create({
+              bookingId: booking._id,
+              crCode: booking.crCode,
+              type: "payment",
+              message: isInactive
+                ? `Deposit of $${depositAmount} wired for project ${booking.crCode}, which is currently ${booking.archived ? "archived" : booking.status}. Review manually.`
+                : `Deposit of $${depositAmount} wired for project ${booking.crCode}. Confirm receipt and move it to in-progress.`,
             });
           }
         }
@@ -266,6 +274,7 @@ async function preCrCode(req, res, next) {
 
 const TIER_PRICES  = { Clip: 79, Scene: 189, Feature: 399 };
 const ADDON_PRICES = { "Rush delivery": 50, "Platform cut": 30, "Captions": 35, "Censored preview": 45, "Intro/outro bumper": 75, "Extra revision": 30 };
+const MAX_COUPONS_PER_BOOKING = 3;
 const PRICING_TIERS = ["Clip", "Scene", "Feature", "Custom"];
 const SERVICE_TYPES = ["Video Editing", "Color Grading", "Sound Design", "Motion Graphics"];
 const PIPELINE_STATUS_ORDER = ["pending", "in-review", "accepted", "in-progress", "completed", "paused", "declined"];
@@ -316,8 +325,8 @@ function writeBookingTxt(booking) {
     lines.push("", "PRICING", `  ${booking.pricingTier} package: $${basePrice}`);
     (booking.addOns || []).forEach(a => { if (ADDON_PRICES[a]) lines.push(`  ${a}: +$${ADDON_PRICES[a]}`); });
     lines.push(`  Subtotal: $${subtotal}`);
-    if (booking.couponCode && booking.discountAmount > 0) {
-      lines.push(`  Coupon ${booking.couponCode}: -$${booking.discountAmount.toFixed(2)}`);
+    if (booking.couponCodes && booking.couponCodes.length > 0) {
+      booking.couponCodes.forEach((c) => lines.push(`  Coupon ${c.code}: -$${c.amount.toFixed(2)}`));
       lines.push(`  Total: $${(subtotal - booking.discountAmount).toFixed(2)}`);
     }
   }
@@ -434,12 +443,12 @@ app.get("/track", async (req, res) => {
     const booking = await BookingRequest.findOne({
       name: { $regex: new RegExp(`^${name?.trim()}$`, "i") },
       email: email?.trim().toLowerCase(),
-    }).select("crCode name serviceType pricingTier budget status depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate deliverableFiles createdAt");
+    }).select("crCode name serviceType pricingTier budget status archived filesDeleted depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate deliverableFiles createdAt");
     return res.render("track", { searched: true, method: "identity", name: name?.trim(), email: email?.trim(), booking });
   }
 
   const booking = await BookingRequest.findOne({ crCode: code.toUpperCase().trim() })
-    .select("crCode name serviceType pricingTier budget status depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate deliverableFiles createdAt");
+    .select("crCode name serviceType pricingTier budget status archived filesDeleted depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate deliverableFiles createdAt");
   res.render("track", { searched: true, method: "code", code: code.toUpperCase().trim(), booking });
 });
 
@@ -458,7 +467,7 @@ app.get("/hire", async (req, res) => {
 app.get("/hire/success", async (req, res) => {
   const { cr } = req.query;
   if (!cr) return res.redirect("/hire");
-  const booking = await BookingRequest.findOne({ crCode: cr }).select("email clientId pricingTier addOns couponCode discountAmount");
+  const booking = await BookingRequest.findOne({ crCode: cr }).select("email clientId pricingTier addOns couponCodes discountAmount");
   if (!booking) return res.redirect("/hire");
   const alreadyLinked = !!booking.clientId;
   const existingUser = !alreadyLinked && await User.exists({ email: booking.email });
@@ -470,7 +479,7 @@ app.get("/hire/success", async (req, res) => {
     hasAccount: !!existingUser,
     pricingTier: booking.pricingTier,
     addOns: booking.addOns || [],
-    couponCode: booking.couponCode || null,
+    couponCodes: booking.couponCodes || [],
     discountAmount: booking.discountAmount || 0,
   });
 });
@@ -549,16 +558,20 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, (req, res, next) => {
     const addonTotal = addOns.reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
     const subtotal   = basePrice + addonTotal;
 
-    let couponCode = null;
+    const couponCodes = [];
     let discountAmount = 0;
-    const rawCode = (req.body.couponCode || "").trim().toUpperCase();
-    if (rawCode && subtotal > 0) {
-      const coupon = await Coupon.findOne({ code: rawCode, active: true });
-      if (coupon && (!coupon.expiresAt || new Date() <= coupon.expiresAt)) {
-        couponCode = coupon.code;
-        discountAmount = coupon.discountType === "percent"
-          ? Math.round(subtotal * coupon.discountValue) / 100
-          : Math.min(coupon.discountValue, subtotal);
+    const rawCodes = [...new Set([].concat(req.body.couponCodes || []).filter(Boolean).map((c) => c.trim().toUpperCase()))].slice(0, MAX_COUPONS_PER_BOOKING);
+    if (rawCodes.length && subtotal > 0) {
+      let running = subtotal;
+      for (const rawCode of rawCodes) {
+        const coupon = await Coupon.findOne({ code: rawCode, active: true });
+        if (!coupon || (coupon.expiresAt && new Date() > coupon.expiresAt)) continue;
+        const amount = coupon.discountType === "percent"
+          ? Math.round(running * coupon.discountValue) / 100
+          : Math.min(coupon.discountValue, running);
+        couponCodes.push({ code: coupon.code, discountType: coupon.discountType, discountValue: coupon.discountValue, amount });
+        discountAmount += amount;
+        running -= amount;
       }
     }
 
@@ -576,7 +589,7 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, (req, res, next) => {
       projectBrief,
       mediaLinks,
       uploadedFiles,
-      couponCode,
+      couponCodes,
       discountAmount,
     });
 
@@ -1004,7 +1017,7 @@ app.get("/admin/analytics", requireAdmin, async (req, res) => {
           ],
         },
         trustGroup: { $cond: [{ $ne: ["$clientId", null] }, "account", "guest"] },
-        hasCoupon: { $cond: [{ $and: [{ $ne: ["$couponCode", null] }, { $ne: ["$couponCode", ""] }] }, 1, 0] },
+        hasCoupon: { $cond: [{ $gt: [{ $size: { $ifNull: ["$couponCodes", []] } }, 0] }, 1, 0] },
       },
     },
     {

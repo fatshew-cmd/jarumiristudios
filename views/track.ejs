@@ -56,10 +56,16 @@
     .s-in-review .status-dot { background: #818cf8; box-shadow: 0 0 6px #818cf8; animation: pulse 1.8s infinite; }
     .s-accepted  { background: rgba(34,197,94,0.12);   color: #4ade80; border: 1px solid rgba(34,197,94,0.25); }
     .s-accepted .status-dot  { background: #4ade80; }
+    .s-in-progress { background: rgba(59,130,246,0.12); color: #60a5fa; border: 1px solid rgba(59,130,246,0.25); }
+    .s-in-progress .status-dot { background: #60a5fa; box-shadow: 0 0 6px #60a5fa; animation: pulse 1.8s infinite; }
+    .s-completed { background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.25); }
+    .s-completed .status-dot { background: #34d399; }
     .s-declined  { background: rgba(239,68,68,0.12);   color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
     .s-declined .status-dot  { background: #f87171; }
     .s-paused    { background: rgba(167,139,250,0.12); color: #a78bfa; border: 1px solid rgba(167,139,250,0.25); }
     .s-paused .status-dot    { background: #a78bfa; }
+    .s-archived, .s-deleted { background: rgba(107,114,128,0.12); color: #9ca3af; border: 1px solid rgba(107,114,128,0.25); }
+    .s-archived .status-dot, .s-deleted .status-dot { background: #9ca3af; }
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50%       { opacity: 0.4; }
@@ -182,27 +188,53 @@
                 <p class="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-1">BR Code</p>
                 <p class="font-mono text-amber-400 font-bold text-lg tracking-widest"><%= booking.crCode %></p>
               </div>
-              <span class="status-pill s-<%= booking.status %>">
+              <%
+                const STATUS_LABELS = {
+                  pending: 'Pending', 'in-review': 'In Review', accepted: 'Accepted',
+                  declined: 'Declined', 'in-progress': 'In Progress', completed: 'Completed', paused: 'Paused',
+                  deleted: 'Deleted', archived: 'Archived',
+                };
+                const displayStatus = booking.filesDeleted ? 'deleted' : booking.archived ? 'archived' : booking.status;
+              %>
+              <span class="status-pill s-<%= displayStatus %>">
                 <span class="status-dot"></span>
-                <%= booking.status === 'in-review' ? 'In Review' : booking.status.charAt(0).toUpperCase() + booking.status.slice(1) %>
+                <%= STATUS_LABELS[displayStatus] || displayStatus %>
               </span>
             </div>
 
             <!-- Timeline -->
             <%
               const steps = [
-                { key: 'pending',   label: 'Request received',   desc: 'Your booking has been submitted successfully.' },
-                { key: 'in-review', label: 'Under review',       desc: 'We\'re going through your brief and files.' },
-                { key: 'accepted',  label: 'Project accepted',   desc: 'We\'ve accepted your project and will be in touch.' },
+                { key: 'pending',     label: 'Request received',   desc: 'Your booking has been submitted successfully.' },
+                { key: 'in-review',   label: 'Under review',       desc: 'We\'re going through your brief and files.' },
+                { key: 'accepted',    label: 'Project accepted',   desc: 'We\'ve accepted your project and will be in touch.' },
+                { key: 'in-progress', label: 'In progress',        desc: 'We\'re actively working on your project.' },
+                { key: 'completed',   label: 'Completed',          desc: 'Your project is complete — thanks for choosing Jarumiri Studios.' },
               ];
-              const statusOrder = ['pending', 'in-review', 'accepted'];
-              const currentIdx  = booking.status === 'declined' ? -1 : statusOrder.indexOf(booking.status);
+              const statusOrder = ['pending', 'in-review', 'accepted', 'in-progress', 'completed'];
+              const isHalted    = booking.status === 'declined' || booking.status === 'paused';
+              const currentIdx  = isHalted ? -1 : statusOrder.indexOf(booking.status);
             %>
 
-            <% if (booking.status === 'declined') { %>
+            <% if (booking.filesDeleted) { %>
+            <div class="pt-4 border-t border-white/5">
+              <p class="text-sm font-medium mb-1 text-gray-400">Project deleted</p>
+              <p class="text-gray-500 text-sm">This project was deleted and its files have been permanently removed. Feel free to <a href="/hire" class="text-amber-400 hover:underline">submit a new request</a> or <a href="https://t.me/jarumiri" class="text-amber-400 hover:underline">reach out on Telegram</a> with any questions.</p>
+            </div>
+            <% } else if (booking.archived) { %>
+            <div class="pt-4 border-t border-white/5">
+              <p class="text-sm font-medium mb-1 text-gray-400">Project archived</p>
+              <p class="text-gray-500 text-sm">This project is no longer active. Feel free to <a href="https://t.me/jarumiri" class="text-amber-400 hover:underline">reach out on Telegram</a> with any questions.</p>
+            </div>
+            <% } else if (booking.status === 'declined') { %>
             <div class="pt-4 border-t border-white/5">
               <p class="text-red-400 text-sm font-medium mb-1">Request declined</p>
               <p class="text-gray-500 text-sm">Unfortunately we weren't able to take on this project. Feel free to <a href="https://t.me/jarumiri" class="text-amber-400 hover:underline">reach out on Telegram</a> to discuss alternatives.</p>
+            </div>
+            <% } else if (booking.status === 'paused') { %>
+            <div class="pt-4 border-t border-white/5">
+              <p class="text-sm font-medium mb-1" style="color:#a78bfa;">Project paused</p>
+              <p class="text-gray-500 text-sm">This project has been temporarily paused. We'll resume work and keep you updated. Feel free to <a href="https://t.me/jarumiri" class="text-amber-400 hover:underline">reach out on Telegram</a> with any questions.</p>
             </div>
             <% } else { %>
             <div class="pt-4 border-t border-white/5 space-y-0">

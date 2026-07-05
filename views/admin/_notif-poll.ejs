@@ -3,6 +3,11 @@
   var lastSeen = Date.now();
   var isNotifPage = window.location.pathname === '/admin/notifications';
 
+  var ICONS = {
+    nudge:   { icon: 'material-symbols-light:notifications-active', cls: 'nudge',   color: '#818cf8' },
+    payment: { icon: 'material-symbols-light:payments',             cls: 'payment', color: '#34d399' },
+  };
+
   function updateBadge(count) {
     var bell = document.getElementById('admin-notif-bell');
     if (!bell) return;
@@ -21,14 +26,15 @@
   }
 
   function buildRow(n) {
+    var ic = ICONS[n.type] || ICONS.nudge;
     var viewLink = n.bookingId
       ? '<a href="/admin/booking/' + n.bookingId + '" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>'
       : '';
     var row = document.createElement('div');
     row.className = 'notif-row unread';
     row.innerHTML =
-      '<div class="notif-icon nudge">' +
-        '<iconify-icon icon="material-symbols-light:notifications-active" width="17" height="17" style="color:#818cf8"></iconify-icon>' +
+      '<div class="notif-icon ' + ic.cls + '">' +
+        '<iconify-icon icon="' + ic.icon + '" width="17" height="17" style="color:' + ic.color + '"></iconify-icon>' +
       '</div>' +
       '<div class="flex-1 min-w-0">' +
         '<p class="text-sm text-gray-200 leading-snug">' + n.message + '</p>' +
@@ -74,11 +80,11 @@
         fetch('/api/admin/notifications/mark-read', { method: 'POST' });
         updateBadge(0);
         data.items.forEach(function (n) {
-          if (typeof showToast === 'function') showToast('New nudge', n.message, 'info');
+          if (typeof showToast === 'function') showToast(n.type === 'payment' ? 'Payment received' : 'New nudge', n.message, 'info');
         });
       } else if (typeof showToast === 'function') {
         data.items.forEach(function (n) {
-          showToast('New nudge', n.message, 'info');
+          showToast(n.type === 'payment' ? 'Payment received' : 'New nudge', n.message, 'info');
         });
       }
     } catch {}
