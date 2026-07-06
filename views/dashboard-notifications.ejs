@@ -165,8 +165,6 @@
             iconName = 'material-symbols-light:alarm'; iconClass = 'invoice'; iconColor = '#f59e0b';
           } else if (n.type === 'deliverable_ready') {
             iconName = 'material-symbols-light:download-for-offline'; iconClass = 'payment'; iconColor = '#34d399';
-          } else if (n.type === 'new_message') {
-            iconName = 'material-symbols-light:chat'; iconClass = 'invoice'; iconColor = '#f59e0b';
           } else {
             iconName = 'material-symbols-light:close-small'; iconClass = 'dismiss'; iconColor = '#f87171';
           }
@@ -179,9 +177,7 @@
             <p class="text-sm text-gray-200 leading-snug"><%= n.message %></p>
             <div class="flex items-center gap-3 mt-1.5">
               <span class="text-xs text-gray-600"><%= timeLabel %></span>
-              <% if (n.bookingId && n.type === 'new_message') { %>
-              <a href="/dashboard/messages/<%= n.bookingId %>" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">Open chat →</a>
-              <% } else if (n.bookingId) { %>
+              <% if (n.bookingId) { %>
               <a href="/dashboard/booking/<%= n.bookingId %>" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>
               <% } %>
             </div>

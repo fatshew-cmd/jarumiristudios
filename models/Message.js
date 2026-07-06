@@ -12,6 +12,10 @@ const messageSchema = new mongoose.Schema(
       storedName: String,
       size: Number,
       mimetype: String,
+      // Which uploads/<crCode>/files/<folder>/ subfolder the file physically lives in —
+      // "chat" for a fresh composer upload, or the source array's own storage type
+      // ("video"/"audio"/"image"/"other"/"deliverables") when tagging an existing project file.
+      folder: String,
     },
     read: { type: Boolean, default: false },
   },

@@ -428,6 +428,24 @@ function messagePreview(body, attachment) {
   return "";
 }
 
+// Builds a chat attachment that references an already-uploaded project file instead of a fresh
+// composer upload, so tagging a file in chat doesn't duplicate it on disk. Returns null if the
+// file doesn't exist on the booking, or (for clients) if it's a deliverable that isn't unlocked yet.
+function resolveTaggedAttachment(booking, source, fileId, isClient) {
+  const arrayName = source === "deliverable" ? "deliverableFiles" : "uploadedFiles";
+  const file = booking[arrayName]?.id(fileId);
+  if (!file) return null;
+  if (arrayName === "deliverableFiles" && isClient && !booking.deliverablesUnlocked) return null;
+  const folder = arrayName === "deliverableFiles" ? "deliverables" : fileTypeFromMime(file.mimetype);
+  return {
+    originalName: file.originalName,
+    storedName: file.storedName,
+    size: file.size,
+    mimetype: file.mimetype,
+    folder,
+  };
+}
+
 // Permanently removes uploaded media for a booking while keeping booking.txt as a record
 function hardDeleteBookingFiles(crCode) {
   if (!crCode) return;
@@ -541,7 +559,7 @@ async function attachCrCode(req, res, next) {
 // Client-side equivalent of attachCrCode above — also verifies the booking belongs to the
 // logged-in client before any multer disk write happens.
 async function attachCrCodeForClient(req, res, next) {
-  const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId }).select("crCode archived clientId name");
+  const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId }).select("crCode archived clientId name uploadedFiles deliverableFiles status");
   if (!booking) return res.sendStatus(403);
   if (booking.archived) return res.sendStatus(403);
   req.crCode = booking.crCode;
@@ -1032,14 +1050,22 @@ app.get("/admin/notifications", requireAdmin, async (req, res) => {
 
 app.get("/api/admin/notifications/poll", requireAdmin, async (req, res) => {
   const since = parseInt(req.query.since) || 0;
-  const [unreadCount, adminUnreadMessageCount, items] = await Promise.all([
+  const [unreadCount, adminUnreadMessageCount, items, newMessages] = await Promise.all([
     AdminNotification.countDocuments({ read: false }),
     Message.countDocuments({ senderRole: "client", read: false }),
     since
       ? AdminNotification.find({ createdAt: { $gt: new Date(since) } }).sort({ createdAt: -1 }).lean()
       : [],
+    since
+      ? Message.find({ senderRole: "client", createdAt: { $gt: new Date(since) } }).sort({ createdAt: -1 }).lean()
+      : [],
   ]);
-  res.json({ unreadCount, adminUnreadMessageCount, items, now: Date.now() });
+  const messageItems = newMessages.map((m) => ({
+    bookingId: m.bookingId,
+    crCode: m.crCode,
+    preview: messagePreview(m.body, m.attachment),
+  }));
+  res.json({ unreadCount, adminUnreadMessageCount, items, messageItems, now: Date.now() });
 });
 
 app.post("/api/admin/notifications/mark-read", requireAdmin, async (req, res) => {
@@ -1287,7 +1313,7 @@ app.get("/admin/booking/:id", requireAdmin, async (req, res) => {
 });
 
 app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => {
-  const booking = await BookingRequest.findById(req.params.id).select("crCode archived clientId");
+  const booking = await BookingRequest.findById(req.params.id).select("crCode archived clientId uploadedFiles deliverableFiles status");
   if (!booking) return res.status(404).json({ error: "Project not found." });
   if (booking.archived) return res.status(403).json({ error: "This project is archived." });
   if (!booking.clientId) return res.status(400).json({ error: "This project has no linked client account." });
@@ -1301,7 +1327,15 @@ app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => 
   });
 }, async (req, res) => {
   const body = (req.body.body || "").trim();
-  if (!body && !req.file) return res.status(400).json({ error: "Message can't be empty." });
+
+  let attachment;
+  if (req.file) {
+    attachment = { originalName: req.file.originalname, storedName: req.file.filename, size: req.file.size, mimetype: req.file.mimetype, folder: "chat" };
+  } else if (req.body.taggedFileId) {
+    attachment = resolveTaggedAttachment(req.booking, req.body.taggedFileSource, req.body.taggedFileId, false);
+    if (!attachment) return res.status(400).json({ error: "That file couldn't be found." });
+  }
+  if (!body && !attachment) return res.status(400).json({ error: "Message can't be empty." });
 
   const message = await Message.create({
     bookingId: req.params.id,
@@ -1309,24 +1343,11 @@ app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => 
     clientId: req.booking.clientId,
     senderRole: "admin",
     body,
-    attachment: req.file ? {
-      originalName: req.file.originalname,
-      storedName: req.file.filename,
-      size: req.file.size,
-      mimetype: req.file.mimetype,
-    } : undefined,
+    attachment,
   });
 
   io.to(chatRoom(req.params.id)).emit("new-message", message);
   res.json({ message });
-
-  Notification.create({
-    userId: req.booking.clientId,
-    bookingId: req.params.id,
-    crCode: req.booking.crCode,
-    type: "new_message",
-    message: `New message on ${req.booking.crCode}: "${messagePreview(body, message.attachment)}"`,
-  }).catch((err) => console.error("Error creating client new-message notification:", err.message));
 });
 
 async function adminMessageThreads() {
@@ -1351,10 +1372,7 @@ app.get("/admin/messages/:id", requireAdmin, async (req, res) => {
   const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: { $ne: null } });
   if (!booking) return res.redirect("/admin/messages");
   const messages = await Message.find({ bookingId: booking._id }).sort({ createdAt: 1 });
-  await Promise.all([
-    Message.updateMany({ bookingId: booking._id, senderRole: "client", read: false }, { read: true }),
-    AdminNotification.updateMany({ bookingId: booking._id, type: "new_message", read: false }, { read: true }),
-  ]);
+  await Message.updateMany({ bookingId: booking._id, senderRole: "client", read: false }, { read: true });
 
   if (req.xhr) {
     return res.render("admin/_message-thread-panel", {
@@ -1372,7 +1390,7 @@ app.get("/admin/messages/attachments/:filename", requireAdmin, async (req, res) 
   const filename = path.basename(req.params.filename);
   const message = await Message.findOne({ "attachment.storedName": filename });
   if (!message) return res.sendStatus(404);
-  if (trySendStoredFile(res, message.crCode, "chat", filename)) return;
+  if (trySendStoredFile(res, message.crCode, message.attachment.folder || "chat", filename)) return;
   res.sendStatus(404);
 });
 
@@ -1918,10 +1936,7 @@ app.get("/dashboard/messages/:id", requireClient, async (req, res) => {
   const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId });
   if (!booking) return res.redirect("/dashboard/messages");
   const messages = await Message.find({ bookingId: booking._id }).sort({ createdAt: 1 });
-  await Promise.all([
-    Message.updateMany({ bookingId: booking._id, senderRole: "admin", read: false }, { read: true }),
-    Notification.updateMany({ bookingId: booking._id, type: "new_message", read: false }, { read: true }),
-  ]);
+  await Message.updateMany({ bookingId: booking._id, senderRole: "admin", read: false }, { read: true });
 
   if (req.xhr) {
     return res.render("_message-thread-panel", {
@@ -1942,7 +1957,15 @@ app.post("/dashboard/messages/:id", requireClient, attachCrCodeForClient, (req, 
   });
 }, async (req, res) => {
   const body = (req.body.body || "").trim();
-  if (!body && !req.file) return res.status(400).json({ error: "Message can't be empty." });
+
+  let attachment;
+  if (req.file) {
+    attachment = { originalName: req.file.originalname, storedName: req.file.filename, size: req.file.size, mimetype: req.file.mimetype, folder: "chat" };
+  } else if (req.body.taggedFileId) {
+    attachment = resolveTaggedAttachment(req.booking, req.body.taggedFileSource, req.body.taggedFileId, true);
+    if (!attachment) return res.status(400).json({ error: "That file couldn't be found." });
+  }
+  if (!body && !attachment) return res.status(400).json({ error: "Message can't be empty." });
 
   const message = await Message.create({
     bookingId: req.params.id,
@@ -1950,43 +1973,44 @@ app.post("/dashboard/messages/:id", requireClient, attachCrCodeForClient, (req, 
     clientId: req.booking.clientId,
     senderRole: "client",
     body,
-    attachment: req.file ? {
-      originalName: req.file.originalname,
-      storedName: req.file.filename,
-      size: req.file.size,
-      mimetype: req.file.mimetype,
-    } : undefined,
+    attachment,
   });
 
   io.to(chatRoom(req.params.id)).emit("new-message", message);
   res.json({ message });
-
-  AdminNotification.create({
-    bookingId: req.params.id,
-    crCode: req.booking.crCode,
-    type: "new_message",
-    message: `New message from ${req.booking.name} (${req.booking.crCode}): "${messagePreview(body, message.attachment)}"`,
-  }).catch((err) => console.error("Error creating admin new-message notification:", err.message));
 });
 
 app.get("/dashboard/messages/attachments/:filename", requireClient, async (req, res) => {
   const filename = path.basename(req.params.filename);
   const message = await Message.findOne({ clientId: req.session.userId, "attachment.storedName": filename });
   if (!message) return res.sendStatus(403);
-  if (trySendStoredFile(res, message.crCode, "chat", filename)) return;
+  const folder = message.attachment.folder || "chat";
+  if (folder === "deliverables") {
+    const booking = await BookingRequest.findById(message.bookingId).select("status");
+    if (!booking?.deliverablesUnlocked) return res.sendStatus(403);
+  }
+  if (trySendStoredFile(res, message.crCode, folder, filename)) return;
   res.sendStatus(404);
 });
 
 app.get("/api/notifications/poll", requireClient, async (req, res) => {
   const since = parseInt(req.query.since) || 0;
-  const [unreadCount, unreadMessageCount, items] = await Promise.all([
+  const [unreadCount, unreadMessageCount, items, newMessages] = await Promise.all([
     Notification.countDocuments({ userId: req.session.userId, read: false }),
     Message.countDocuments({ clientId: req.session.userId, senderRole: "admin", read: false }),
     since
       ? Notification.find({ userId: req.session.userId, createdAt: { $gt: new Date(since) } }).sort({ createdAt: -1 }).lean()
       : [],
+    since
+      ? Message.find({ clientId: req.session.userId, senderRole: "admin", createdAt: { $gt: new Date(since) } }).sort({ createdAt: -1 }).lean()
+      : [],
   ]);
-  res.json({ unreadCount, unreadMessageCount, items, now: Date.now() });
+  const messageItems = newMessages.map((m) => ({
+    bookingId: m.bookingId,
+    crCode: m.crCode,
+    preview: messagePreview(m.body, m.attachment),
+  }));
+  res.json({ unreadCount, unreadMessageCount, items, messageItems, now: Date.now() });
 });
 
 app.post("/api/notifications/mark-read", requireClient, async (req, res) => {

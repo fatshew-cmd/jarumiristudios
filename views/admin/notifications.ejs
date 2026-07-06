@@ -86,7 +86,6 @@
         nudge:       { icon: 'material-symbols-light:notifications-active', cls: 'nudge',       color: '#818cf8' },
         payment:     { icon: 'material-symbols-light:payments',             cls: 'payment',     color: '#34d399' },
         new_booking: { icon: 'material-symbols-light:post-add',             cls: 'new-booking', color: '#f59e0b' },
-        new_message: { icon: 'material-symbols-light:chat',                 cls: 'new-booking', color: '#f59e0b' },
       };
       notifications.forEach(n => {
         const isUnread = !n.read;
@@ -112,9 +111,7 @@
           <p class="text-sm text-gray-200 leading-snug"><%= n.message %></p>
           <div class="flex items-center gap-3 mt-1.5">
             <span class="text-xs text-gray-600"><%= timeLabel %></span>
-            <% if (n.bookingId && n.type === 'new_message') { %>
-            <a href="/admin/messages/<%= n.bookingId %>" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">Open chat →</a>
-            <% } else if (n.bookingId) { %>
+            <% if (n.bookingId) { %>
             <a href="/admin/booking/<%= n.bookingId %>" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>
             <% } %>
           </div>

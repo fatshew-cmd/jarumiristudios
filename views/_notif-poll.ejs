@@ -13,7 +13,6 @@
     due_date_updated:  { icon: 'material-symbols-light:calendar-clock', cls: 'invoice', color: '#f59e0b' },
     due_date_reminder: { icon: 'material-symbols-light:alarm',          cls: 'invoice', color: '#f59e0b' },
     deliverable_ready: { icon: 'material-symbols-light:download-for-offline', cls: 'payment', color: '#34d399' },
-    new_message:       { icon: 'material-symbols-light:chat',          cls: 'invoice', color: '#f59e0b' },
   };
 
   function updateLinkBadge(href, count) {
@@ -42,9 +41,9 @@
 
   function buildRow(n) {
     var ic = ICONS[n.type] || { icon: 'material-symbols-light:close-small', cls: 'dismiss', color: '#f87171' };
-    var viewLink = !n.bookingId ? '' : n.type === 'new_message'
-      ? '<a href="/dashboard/messages/' + n.bookingId + '" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">Open chat →</a>'
-      : '<a href="/dashboard/booking/' + n.bookingId + '" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>';
+    var viewLink = n.bookingId
+      ? '<a href="/dashboard/booking/' + n.bookingId + '" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>'
+      : '';
     var row = document.createElement('div');
     row.className = 'notif-row unread';
     row.innerHTML =
@@ -80,6 +79,23 @@
     });
   }
 
+  function handleNewMessages(messageItems) {
+    if (!messageItems.length) return;
+
+    var activeBookingMatch = location.pathname.match(/\/messages\/([a-f0-9]+)$/);
+    var activeBookingId = activeBookingMatch ? activeBookingMatch[1] : null;
+
+    var elsewhere = messageItems.filter(function (m) { return String(m.bookingId) !== activeBookingId; });
+
+    if (typeof showToast === 'function') {
+      elsewhere.forEach(function (m) {
+        showToast('New message', 'On ' + m.crCode + ': "' + m.preview + '"', 'info');
+      });
+    }
+
+    if (isMessagesPage && elsewhere.length) location.reload();
+  }
+
   async function poll() {
     try {
       var res = await fetch('/api/notifications/poll?since=' + lastSeen);
@@ -89,6 +105,8 @@
 
       updateBadge(data.unreadCount);
       updateMessagesBadge(data.unreadMessageCount);
+
+      handleNewMessages(data.messageItems || []);
 
       if (!data.items.length) return;
 
@@ -100,27 +118,17 @@
         return;
       }
 
-      var activeBookingMatch = location.pathname.match(/\/messages\/([a-f0-9]+)$/);
-      var activeBookingId = activeBookingMatch ? activeBookingMatch[1] : null;
-      var toastable = data.items.filter(function (n) {
-        return !(n.type === 'new_message' && String(n.bookingId) === activeBookingId);
-      });
-
       if (isNotifPage) {
         prependToList(data.items);
         fetch('/api/notifications/mark-read', { method: 'POST' });
         updateBadge(0);
-        toastable.forEach(function (n) {
+        data.items.forEach(function (n) {
           if (typeof showToast === 'function') showToast('New notification', n.message, 'info');
         });
       } else if (typeof showToast === 'function') {
-        toastable.forEach(function (n) {
+        data.items.forEach(function (n) {
           showToast('New notification', n.message, 'info');
         });
-      }
-
-      if (isMessagesPage && data.items.some(function (n) { return n.type === 'new_message' && String(n.bookingId) !== activeBookingId; })) {
-        location.reload();
       }
     } catch {}
   }

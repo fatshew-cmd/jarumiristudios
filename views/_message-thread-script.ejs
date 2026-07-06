@@ -9,8 +9,57 @@
     if (list) list.scrollTop = list.scrollHeight;
   }
 
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
   function timeLabel(iso) {
-    return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function attachmentIcon(mimetype) {
+    if (/^video\//i.test(mimetype)) return 'material-symbols-light:videocam';
+    if (/^audio\//i.test(mimetype)) return 'material-symbols-light:music-note';
+    return 'material-symbols-light:attach-file';
+  }
+
+  function attachmentBadgeHtml(attachment, attachmentBase) {
+    if (!attachment || !attachment.storedName) return '';
+    var isImage = /^image\//i.test(attachment.mimetype);
+    var attUrl = attachmentBase + '/' + attachment.storedName;
+    var thumbInner = isImage
+      ? '<img src="' + attUrl + '" alt="" />'
+      : '<iconify-icon icon="' + attachmentIcon(attachment.mimetype) + '" width="18" height="18"></iconify-icon>';
+    return '<a class="attachment-badge" href="' + attUrl + '" download="' + escapeHtml(attachment.originalName) + '">' +
+        '<span class="badge-thumb">' + thumbInner + '</span>' +
+        '<span class="badge-name">' + escapeHtml(attachment.originalName) + '</span></a>';
+  }
+
+  function dayLabel(date) {
+    var now = new Date();
+    var startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    var diffDays = Math.round((startOfToday - startOfDay) / 86400000);
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays > 1 && diffDays < 7) return date.toLocaleDateString('en-US', { weekday: 'long' });
+    var opts = { month: 'long', day: 'numeric' };
+    if (date.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+    return date.toLocaleDateString('en-US', opts);
+  }
+
+  function maybeInsertDaySeparator(list, date) {
+    var dayKey = date.toDateString();
+    var separators = list.querySelectorAll('.day-separator');
+    var lastKey = separators.length ? separators[separators.length - 1].dataset.dayKey : null;
+    if (dayKey === lastKey) return;
+    var sep = document.createElement('div');
+    sep.className = 'day-separator';
+    sep.dataset.dayKey = dayKey;
+    sep.innerHTML = '<span>' + dayLabel(date) + '</span>';
+    list.appendChild(sep);
   }
 
   function threadRowPrefix(senderRole, myRole) {
@@ -37,20 +86,19 @@
     var row = document.createElement('div');
     row.className = 'bubble-row ' + (m.senderRole === myRole ? 'mine' : 'theirs');
     row.dataset.messageId = m._id;
-    var attachmentHtml = (m.attachment && m.attachment.storedName)
-      ? '<a class="attachment-chip" href="' + attachmentBase + '/' + m.attachment.storedName + '" download="' + m.attachment.originalName + '">' +
-          '<iconify-icon icon="material-symbols-light:attach-file" width="18" height="18"></iconify-icon>' +
-          '<span style="font-size:13.5px;">' + m.attachment.originalName + '</span></a>'
-      : '';
-    var tickHtml = m.senderRole === myRole
+    var attachmentHtml = attachmentBadgeHtml(m.attachment, attachmentBase);
+    var showTick = m.senderRole === myRole;
+    var tickHtml = showTick
       ? '<iconify-icon icon="' + (m.read ? 'material-symbols:done-all' : 'material-symbols:check') + '" width="15" height="15" class="tick ' + (m.read ? 'tick-read' : '') + '"></iconify-icon>'
       : '';
+    var spacerHtml = m.body ? '<span class="time-spacer ' + (showTick ? 'with-tick' : '') + '"></span>' : '';
     row.innerHTML =
       '<div class="bubble-col"><div class="bubble">' +
-        (m.body ? '<div>' + m.body + '</div>' : '') +
         attachmentHtml +
-        '<div class="bubble-time"><span class="bubble-time-text">' + timeLabel(m.createdAt) + '</span>' + tickHtml + '</div>' +
+        escapeHtml(m.body || '') + spacerHtml +
+        '<span class="bubble-time ' + (m.body ? 'corner' : 'block') + '"><span class="bubble-time-text">' + timeLabel(m.createdAt) + '</span>' + tickHtml + '</span>' +
       '</div></div>';
+    maybeInsertDaySeparator(list, new Date(m.createdAt));
     list.appendChild(row);
     scrollToBottom();
   }
@@ -71,18 +119,90 @@
     var bodyInput = document.getElementById('body-input');
     var attachmentInput = document.getElementById('attachment-input');
     var attachmentPreview = document.getElementById('attachment-preview');
+    var attachmentPreviewName = document.getElementById('attachment-preview-name');
+    var attachmentPreviewClear = document.getElementById('attachment-preview-clear');
+    var attachBtn = document.getElementById('attach-btn');
+    var attachModal = document.getElementById('attach-modal');
+    var attachModalClose = document.getElementById('attach-modal-close');
+    var browseFilesBtn = document.getElementById('browse-files-btn');
+    var taggedFileIdInput = document.getElementById('tagged-file-id');
+    var taggedFileSourceInput = document.getElementById('tagged-file-source');
+
+    function showPreview(name) {
+      attachmentPreviewName.textContent = name;
+      attachmentPreview.classList.remove('hidden');
+      attachmentPreview.classList.add('flex');
+    }
+
+    function hidePreview() {
+      attachmentPreview.classList.add('hidden');
+      attachmentPreview.classList.remove('flex');
+      attachmentPreviewName.textContent = '';
+    }
+
+    function clearTaggedFile() {
+      taggedFileIdInput.value = '';
+      taggedFileSourceInput.value = '';
+    }
+
+    function openAttachModal() {
+      attachModal.classList.remove('hidden');
+      attachModal.classList.add('flex');
+    }
+
+    function closeAttachModal() {
+      attachModal.classList.add('hidden');
+      attachModal.classList.remove('flex');
+    }
+
+    attachBtn.addEventListener('click', openAttachModal);
+    attachModalClose.addEventListener('click', closeAttachModal);
+    attachModal.addEventListener('click', function (e) {
+      if (e.target === attachModal) closeAttachModal();
+    });
+
+    browseFilesBtn.addEventListener('click', function () {
+      closeAttachModal();
+      attachmentInput.click();
+    });
+
+    attachModal.querySelectorAll('.media-pick-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        attachmentInput.value = '';
+        taggedFileIdInput.value = btn.dataset.fileId;
+        taggedFileSourceInput.value = btn.dataset.source;
+        showPreview(btn.dataset.originalName);
+        closeAttachModal();
+      });
+    });
+
+    attachmentPreviewClear.addEventListener('click', function () {
+      attachmentInput.value = '';
+      clearTaggedFile();
+      hidePreview();
+    });
 
     attachmentInput.addEventListener('change', function () {
-      attachmentPreview.textContent = attachmentInput.files[0] ? attachmentInput.files[0].name : '';
+      var file = attachmentInput.files[0];
+      if (!file) { hidePreview(); return; }
+      clearTaggedFile();
+      showPreview(file.name);
     });
 
     composer.addEventListener('submit', async function (e) {
       e.preventDefault();
       var body = bodyInput.value.trim();
-      if (!body && !attachmentInput.files[0]) return;
+      var hasUpload = !!attachmentInput.files[0];
+      var hasTagged = !!taggedFileIdInput.value;
+      if (!body && !hasUpload && !hasTagged) return;
       var formData = new FormData();
       formData.append('body', body);
-      if (attachmentInput.files[0]) formData.append('attachment', attachmentInput.files[0]);
+      if (hasUpload) {
+        formData.append('attachment', attachmentInput.files[0]);
+      } else if (hasTagged) {
+        formData.append('taggedFileId', taggedFileIdInput.value);
+        formData.append('taggedFileSource', taggedFileSourceInput.value);
+      }
       var res = await fetch(postPath, { method: 'POST', body: formData });
       if (!res.ok) {
         if (typeof showToast === 'function') showToast('Message not sent', 'Please try again.', 'error');
@@ -92,7 +212,8 @@
       renderMessage(bookingId, data.message, myRole, attachmentBase);
       bodyInput.value = '';
       attachmentInput.value = '';
-      attachmentPreview.textContent = '';
+      clearTaggedFile();
+      hidePreview();
     });
 
     bodyInput.addEventListener('keydown', function (e) {
@@ -130,6 +251,15 @@
   window.showList = function () {
     if (messenger) messenger.classList.remove('thread-active');
   };
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var modal = document.getElementById('attach-modal');
+    if (modal && !modal.classList.contains('hidden')) {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+  });
 
   window.addEventListener('popstate', function () {
     var m = location.pathname.match(/\/messages\/([a-f0-9]+)$/);
