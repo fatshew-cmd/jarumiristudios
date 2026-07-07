@@ -422,9 +422,19 @@ function notifyAdminNewBooking(booking) {
   }).catch((err) => console.error("Error creating admin new-booking notification:", err.message));
 }
 
-function messagePreview(body, attachment) {
+// Normalizes either shape a Message can carry — the legacy single `attachment` (messages sent
+// before multi-attachment support) or the current `attachments` array — into a plain array.
+function messageAttachments(m) {
+  if (m.attachments && m.attachments.length) return m.attachments;
+  if (m.attachment && m.attachment.storedName) return [m.attachment];
+  return [];
+}
+
+function messagePreview(body, attachments) {
   if (body) return body.length > 60 ? body.slice(0, 60) + "…" : body;
-  if (attachment) return "📎 " + attachment.originalName;
+  if (attachments && attachments.length) {
+    return attachments.length === 1 ? "📎 " + attachments[0].originalName : "📎 " + attachments.length + " files";
+  }
   return "";
 }
 
@@ -444,6 +454,26 @@ function resolveTaggedAttachment(booking, source, fileId, isClient) {
     mimetype: file.mimetype,
     folder,
   };
+}
+
+// Resolves a JSON-encoded list of { id, source } tag requests into attachment objects.
+// Returns null (caller should 400) if the JSON is malformed or any referenced file can't be tagged.
+function resolveTaggedAttachments(booking, taggedFilesJson, isClient) {
+  if (!taggedFilesJson) return [];
+  let items;
+  try {
+    items = JSON.parse(taggedFilesJson);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(items)) return null;
+  const attachments = [];
+  for (const item of items) {
+    const att = resolveTaggedAttachment(booking, item?.source, item?.id, isClient);
+    if (!att) return null;
+    attachments.push(att);
+  }
+  return attachments;
 }
 
 // Permanently removes uploaded media for a booking while keeping booking.txt as a record
@@ -532,6 +562,7 @@ const deliverableUpload = multer({
 // Chat attachments — quick references/previews, not raw footage delivery (that's what the
 // main upload system above is for), so a smaller cap than member uploads.
 const CHAT_ATTACHMENT_MAX_SIZE = 25 * 1024 * 1024; // 25 MB
+const CHAT_MAX_ATTACHMENTS = 10;
 const chatStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = path.join(__dirname, "uploads", req.crCode, "files", "chat");
@@ -1063,7 +1094,7 @@ app.get("/api/admin/notifications/poll", requireAdmin, async (req, res) => {
   const messageItems = newMessages.map((m) => ({
     bookingId: m.bookingId,
     crCode: m.crCode,
-    preview: messagePreview(m.body, m.attachment),
+    preview: messagePreview(m.body, messageAttachments(m)),
   }));
   res.json({ unreadCount, adminUnreadMessageCount, items, messageItems, now: Date.now() });
 });
@@ -1321,21 +1352,21 @@ app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => 
   req.booking = booking;
   next();
 }, (req, res, next) => {
-  chatUpload.single("attachment")(req, res, (err) => {
+  chatUpload.array("attachments", CHAT_MAX_ATTACHMENTS)(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });
     next();
   });
 }, async (req, res) => {
   const body = (req.body.body || "").trim();
 
-  let attachment;
-  if (req.file) {
-    attachment = { originalName: req.file.originalname, storedName: req.file.filename, size: req.file.size, mimetype: req.file.mimetype, folder: "chat" };
-  } else if (req.body.taggedFileId) {
-    attachment = resolveTaggedAttachment(req.booking, req.body.taggedFileSource, req.body.taggedFileId, false);
-    if (!attachment) return res.status(400).json({ error: "That file couldn't be found." });
-  }
-  if (!body && !attachment) return res.status(400).json({ error: "Message can't be empty." });
+  const attachments = (req.files || []).map((f) => ({
+    originalName: f.originalname, storedName: f.filename, size: f.size, mimetype: f.mimetype, folder: "chat",
+  }));
+  const tagged = resolveTaggedAttachments(req.booking, req.body.taggedFiles, false);
+  if (tagged === null) return res.status(400).json({ error: "One of those files couldn't be found." });
+  attachments.push(...tagged);
+
+  if (!body && attachments.length === 0) return res.status(400).json({ error: "Message can't be empty." });
 
   const message = await Message.create({
     bookingId: req.params.id,
@@ -1343,7 +1374,7 @@ app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => 
     clientId: req.booking.clientId,
     senderRole: "admin",
     body,
-    attachment,
+    attachments,
   });
 
   io.to(chatRoom(req.params.id)).emit("new-message", message);
@@ -1388,9 +1419,11 @@ app.get("/admin/messages/:id", requireAdmin, async (req, res) => {
 
 app.get("/admin/messages/attachments/:filename", requireAdmin, async (req, res) => {
   const filename = path.basename(req.params.filename);
-  const message = await Message.findOne({ "attachment.storedName": filename });
+  const message = await Message.findOne({ $or: [{ "attachments.storedName": filename }, { "attachment.storedName": filename }] });
   if (!message) return res.sendStatus(404);
-  if (trySendStoredFile(res, message.crCode, message.attachment.folder || "chat", filename)) return;
+  const att = messageAttachments(message).find((a) => a.storedName === filename);
+  if (!att) return res.sendStatus(404);
+  if (trySendStoredFile(res, message.crCode, att.folder || "chat", filename)) return;
   res.sendStatus(404);
 });
 
@@ -1951,21 +1984,21 @@ app.get("/dashboard/messages/:id", requireClient, async (req, res) => {
 });
 
 app.post("/dashboard/messages/:id", requireClient, attachCrCodeForClient, (req, res, next) => {
-  chatUpload.single("attachment")(req, res, (err) => {
+  chatUpload.array("attachments", CHAT_MAX_ATTACHMENTS)(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });
     next();
   });
 }, async (req, res) => {
   const body = (req.body.body || "").trim();
 
-  let attachment;
-  if (req.file) {
-    attachment = { originalName: req.file.originalname, storedName: req.file.filename, size: req.file.size, mimetype: req.file.mimetype, folder: "chat" };
-  } else if (req.body.taggedFileId) {
-    attachment = resolveTaggedAttachment(req.booking, req.body.taggedFileSource, req.body.taggedFileId, true);
-    if (!attachment) return res.status(400).json({ error: "That file couldn't be found." });
-  }
-  if (!body && !attachment) return res.status(400).json({ error: "Message can't be empty." });
+  const attachments = (req.files || []).map((f) => ({
+    originalName: f.originalname, storedName: f.filename, size: f.size, mimetype: f.mimetype, folder: "chat",
+  }));
+  const tagged = resolveTaggedAttachments(req.booking, req.body.taggedFiles, true);
+  if (tagged === null) return res.status(400).json({ error: "One of those files couldn't be found." });
+  attachments.push(...tagged);
+
+  if (!body && attachments.length === 0) return res.status(400).json({ error: "Message can't be empty." });
 
   const message = await Message.create({
     bookingId: req.params.id,
@@ -1973,7 +2006,7 @@ app.post("/dashboard/messages/:id", requireClient, attachCrCodeForClient, (req, 
     clientId: req.booking.clientId,
     senderRole: "client",
     body,
-    attachment,
+    attachments,
   });
 
   io.to(chatRoom(req.params.id)).emit("new-message", message);
@@ -1982,9 +2015,14 @@ app.post("/dashboard/messages/:id", requireClient, attachCrCodeForClient, (req, 
 
 app.get("/dashboard/messages/attachments/:filename", requireClient, async (req, res) => {
   const filename = path.basename(req.params.filename);
-  const message = await Message.findOne({ clientId: req.session.userId, "attachment.storedName": filename });
+  const message = await Message.findOne({
+    clientId: req.session.userId,
+    $or: [{ "attachments.storedName": filename }, { "attachment.storedName": filename }],
+  });
   if (!message) return res.sendStatus(403);
-  const folder = message.attachment.folder || "chat";
+  const att = messageAttachments(message).find((a) => a.storedName === filename);
+  if (!att) return res.sendStatus(404);
+  const folder = att.folder || "chat";
   if (folder === "deliverables") {
     const booking = await BookingRequest.findById(message.bookingId).select("status");
     if (!booking?.deliverablesUnlocked) return res.sendStatus(403);
@@ -2008,7 +2046,7 @@ app.get("/api/notifications/poll", requireClient, async (req, res) => {
   const messageItems = newMessages.map((m) => ({
     bookingId: m.bookingId,
     crCode: m.crCode,
-    preview: messagePreview(m.body, m.attachment),
+    preview: messagePreview(m.body, messageAttachments(m)),
   }));
   res.json({ unreadCount, unreadMessageCount, items, messageItems, now: Date.now() });
 });

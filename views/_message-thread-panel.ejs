@@ -22,8 +22,16 @@
     }
     function attachmentIcon(mimetype) {
       if (/^video\//i.test(mimetype)) return 'material-symbols-light:videocam';
-      if (/^audio\//i.test(mimetype)) return 'material-symbols-light:music-note';
+      if (/^audio\//i.test(mimetype)) return 'material-symbols-light:music-note-2';
       return 'material-symbols-light:attach-file';
+    }
+    function truncateTaggedName(name) {
+      const dotIdx = name.lastIndexOf('.');
+      const hasExt = dotIdx > 0 && dotIdx < name.length - 1;
+      const ext = hasExt ? name.slice(dotIdx) : '';
+      const base = hasExt ? name.slice(0, dotIdx) : name;
+      if (base.length <= 8) return base + ext;
+      return base.slice(0, 4) + '…' + base.slice(-4) + ext;
     }
     let lastDayKey = null;
   %>
@@ -39,21 +47,46 @@
   <div class="bubble-row <%= m.senderRole === myRole ? 'mine' : 'theirs' %>" data-message-id="<%= m._id %>">
     <div class="bubble-col">
       <div class="bubble">
-        <% if (m.attachment && m.attachment.storedName) {
-          const isImage = /^image\//i.test(m.attachment.mimetype);
-          const attUrl = attachmentBasePath + '/' + m.attachment.storedName;
+        <% const msgAttachments = (m.attachments && m.attachments.length) ? m.attachments : (m.attachment && m.attachment.storedName ? [m.attachment] : []); %>
+        <% msgAttachments.forEach(att => {
+          const isImage = /^image\//i.test(att.mimetype);
+          const isVideo = /^video\//i.test(att.mimetype);
+          const isAudio = /^audio\//i.test(att.mimetype);
+          const isTagged = att.folder && att.folder !== 'chat';
+          const attUrl = attachmentBasePath + '/' + att.storedName;
         %>
-        <a class="attachment-badge" href="<%= attUrl %>" download="<%= m.attachment.originalName %>">
-          <span class="badge-thumb">
+        <% if (isTagged) { %>
+        <a class="tagged-inline-badge" href="<%= attUrl %>" download="<%= att.originalName %>" title="<%= att.originalName %>">
+          <span class="tagged-inline-thumb">
             <% if (isImage) { %>
             <img src="<%= attUrl %>" alt="" />
+            <% } else if (isVideo) { %>
+            <video src="<%= attUrl %>" muted preload="metadata"></video>
+            <% } else if (isAudio) { %>
+            <iconify-icon icon="material-symbols-light:music-note-2" width="13" height="13" style="color:#f59e0b;"></iconify-icon>
             <% } else { %>
-            <iconify-icon icon="<%= attachmentIcon(m.attachment.mimetype) %>" width="18" height="18"></iconify-icon>
+            <iconify-icon icon="<%= attachmentIcon(att.mimetype) %>" width="13" height="13"></iconify-icon>
             <% } %>
           </span>
-          <span class="badge-name"><%= m.attachment.originalName %></span>
+          <span><%= truncateTaggedName(att.originalName) %></span>
+        </a>
+        <% } else { %>
+        <a class="attachment-badge" href="<%= attUrl %>" download="<%= att.originalName %>">
+          <span class="badge-thumb <%= isAudio ? 'badge-thumb-audio' : '' %>">
+            <% if (isImage) { %>
+            <img src="<%= attUrl %>" alt="" />
+            <% } else if (isVideo) { %>
+            <video src="<%= attUrl %>" muted preload="metadata"></video>
+            <% } else if (isAudio) { %>
+            <iconify-icon icon="material-symbols-light:music-note-2" width="18" height="18" style="color:#f59e0b;"></iconify-icon>
+            <% } else { %>
+            <iconify-icon icon="<%= attachmentIcon(att.mimetype) %>" width="18" height="18"></iconify-icon>
+            <% } %>
+          </span>
+          <span class="badge-name"><%= att.originalName %></span>
         </a>
         <% } %>
+        <% }) %>
         <% const showTick = m.senderRole === myRole; %>
         <% if (m.body) { %>
         <%= m.body %><span class="time-spacer <%= showTick ? 'with-tick' : '' %>"></span>
@@ -107,15 +140,21 @@
         <div class="space-y-1">
           <% group.files.forEach(f => {
             const isImage = /^image\//i.test(f.mimetype);
+            const isVideo = /^video\//i.test(f.mimetype);
+            const isAudio = /^audio\//i.test(f.mimetype);
             const thumbUrl = group.base + '/' + f.storedName;
             const sizeLabel = f.size < 1024*1024 ? (f.size/1024).toFixed(1)+' KB' : (f.size/1024/1024).toFixed(1)+' MB';
           %>
           <button type="button" class="media-pick-btn w-full flex items-center gap-3 px-2.5 py-2 rounded-md hover:bg-white/5 transition-colors text-left"
             data-file-id="<%= f._id %>" data-source="<%= group.source %>"
-            data-original-name="<%= f.originalName %>" data-mimetype="<%= f.mimetype %>" data-thumb="<%= isImage ? thumbUrl : '' %>">
-            <span class="badge-thumb badge-thumb-lg">
+            data-original-name="<%= f.originalName %>" data-mimetype="<%= f.mimetype %>" data-thumb="<%= thumbUrl %>">
+            <span class="badge-thumb badge-thumb-lg <%= isAudio ? 'badge-thumb-audio' : '' %>">
               <% if (isImage) { %>
               <img src="<%= thumbUrl %>" alt="" />
+              <% } else if (isVideo) { %>
+              <video src="<%= thumbUrl %>" muted preload="metadata"></video>
+              <% } else if (isAudio) { %>
+              <iconify-icon icon="material-symbols-light:music-note-2" width="18" height="18" style="color:#f59e0b;"></iconify-icon>
               <% } else { %>
               <iconify-icon icon="<%= attachmentIcon(f.mimetype) %>" width="18" height="18"></iconify-icon>
               <% } %>
@@ -130,27 +169,27 @@
       </div>
       <% }) %>
     </div>
+    <div class="p-4 border-t border-white/5 shrink-0">
+      <button type="button" id="attach-modal-done" class="w-full h-11 flex items-center justify-center bg-amber-400 hover:bg-amber-300 text-black text-sm font-bold rounded-md transition-colors">
+        Done
+      </button>
+    </div>
   </div>
 </div>
 
 <!-- Composer -->
-<form id="composer" class="flex items-end gap-2 px-5 py-4 border-t border-white/5 shrink-0" enctype="multipart/form-data" data-post-path="<%= postPath %>" data-attachment-base="<%= attachmentBasePath %>" data-my-role="<%= myRole %>">
-  <button type="button" id="attach-btn" class="text-gray-500 hover:text-white transition-colors p-2">
-    <iconify-icon icon="material-symbols-light:attach-file" width="20" height="20"></iconify-icon>
-  </button>
-  <input type="file" id="attachment-input" name="attachment" class="hidden" />
-  <input type="hidden" id="tagged-file-id" name="taggedFileId" />
-  <input type="hidden" id="tagged-file-source" name="taggedFileSource" />
-  <span id="attachment-preview" class="hidden items-center gap-1.5 text-xs text-gray-500 max-w-35">
-    <span id="attachment-preview-name" class="truncate"></span>
-    <button type="button" id="attachment-preview-clear" class="text-gray-600 hover:text-white transition-colors shrink-0">
-      <iconify-icon icon="material-symbols-light:close" width="14" height="14"></iconify-icon>
+<form id="composer" class="flex flex-col gap-2 px-5 py-4 border-t border-white/5 shrink-0" enctype="multipart/form-data" data-post-path="<%= postPath %>" data-attachment-base="<%= attachmentBasePath %>" data-my-role="<%= myRole %>">
+  <div id="attachment-preview-list" class="hidden flex-wrap gap-2"></div>
+  <div class="flex items-end gap-2">
+    <button type="button" id="attach-btn" class="h-12 w-12 flex items-center justify-center text-gray-300 hover:text-white bg-white/4 hover:bg-white/8 border border-white/10 rounded-md transition-colors shrink-0">
+      <iconify-icon icon="material-symbols-light:attach-file" width="20" height="20"></iconify-icon>
     </button>
-  </span>
-  <textarea id="body-input" rows="1" placeholder="Write a message..."
-    class="flex-1 h-12 bg-white/4 border border-white/10 rounded-md px-4 py-2.5 text-sm text-white outline-none resize-none"
-    style="max-height:120px;"></textarea>
-  <button type="submit" class="h-12 bg-amber-400 text-black text-sm font-bold px-4 py-2.5 rounded-md hover:bg-amber-300 transition-colors">
-    Send
-  </button>
+    <input type="file" id="attachment-input" name="attachments" multiple class="hidden" />
+    <textarea id="body-input" rows="1" placeholder="Write a message..."
+      class="flex-1 h-12 bg-white/4 border border-white/10 rounded-md px-4 py-2.5 text-sm text-white outline-none resize-none"
+      style="max-height:120px;"></textarea>
+    <button type="submit" class="h-12 bg-amber-400 text-black text-sm font-bold px-4 py-2.5 rounded-md hover:bg-amber-300 transition-colors">
+      Send
+    </button>
+  </div>
 </form>

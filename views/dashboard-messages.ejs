@@ -14,6 +14,7 @@
   <style>
     body { font-family: 'Inter', sans-serif; }
     h1, h2, h3, .brand { font-family: 'Syne', sans-serif; }
+    button, a { cursor: pointer; }
 
     .sidebar-link {
       display: flex; align-items: center; gap: 10px;
@@ -84,7 +85,7 @@
       font-size: 11px; line-height: 1;
     }
     .bubble-time.corner { position: absolute; right: 16px; bottom: 11px; }
-    .bubble-time.block { margin-top: 4px; }
+    .bubble-time.block { display: flex; justify-content: flex-end; margin-top: 4px; }
     .bubble-time-text { opacity: 0.65; }
     .tick { opacity: 1; color: rgba(0,0,0,0.55); }
     .tick-read { color: #1d4ed8; }
@@ -98,13 +99,40 @@
     .bubble-row.theirs .attachment-badge { background: rgba(0,0,0,0.25); color: #e5e7eb; }
     .bubble-row.mine .attachment-badge { background: rgba(0,0,0,0.12); color: #000; }
     .badge-thumb {
+      position: relative;
       display: flex; align-items: center; justify-content: center;
       width: 34px; height: 34px; border-radius: 6px; flex-shrink: 0;
-      background: rgba(255,255,255,0.08); overflow: hidden;
+      background: rgba(255,255,255,0.08);
     }
-    .badge-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .badge-thumb img, .badge-thumb video { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
     .badge-thumb-lg { width: 36px; height: 36px; border: 1px solid rgba(255,255,255,0.1); }
+    .badge-thumb-audio { background: rgba(255,255,255,0.3); border-color: rgba(255,255,255,0.22); }
     .badge-name { font-size: 13.5px; }
+    .badge-tag-mark {
+      position: absolute; bottom: -3px; right: -3px;
+      width: 15px; height: 15px; border-radius: 50%;
+      background: #0d0d0d;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 0 1.5px rgba(255,255,255,0.15);
+    }
+    .media-pick-selected { background: rgba(245,158,11,0.12); }
+    .media-pick-selected .badge-thumb { box-shadow: 0 0 0 2px #f59e0b; }
+
+    .tagged-inline-badge {
+      display: flex; align-items: center; gap: 5px; width: fit-content;
+      padding: 2px 10px 2px 2px; border-radius: 6px;
+      background: rgba(0,0,0,0.15);
+      text-decoration: none; margin-bottom: 5px;
+      font-size: 13px; max-width: 100%;
+    }
+    .bubble-row.theirs .tagged-inline-badge { background: rgba(0,0,0,0.25); color: #e5e7eb; }
+    .bubble-row.mine .tagged-inline-badge { background: rgba(0,0,0,0.12); color: #000; }
+    .tagged-inline-thumb {
+      display: flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+      background: rgba(255,255,255,0.15); overflow: hidden;
+    }
+    .tagged-inline-thumb img, .tagged-inline-thumb video { width: 100%; height: 100%; object-fit: cover; }
   </style>
 </head>
 <body class="bg-[#080808] text-gray-100 antialiased">
@@ -199,8 +227,11 @@
               <span class="font-mono text-amber-400 text-xs font-semibold"><%= t.booking.crCode %></span>
             </div>
             <p class="text-sm text-gray-300 mt-0.5 truncate">
-              <% if (t.lastMessage) { %>
-                <%= t.lastMessage.senderRole === 'admin' ? 'Studio: ' : 'You: ' %><%= t.lastMessage.body || (t.lastMessage.attachment ? '📎 ' + t.lastMessage.attachment.originalName : '') %>
+              <% if (t.lastMessage) {
+                const atts = (t.lastMessage.attachments && t.lastMessage.attachments.length) ? t.lastMessage.attachments : (t.lastMessage.attachment && t.lastMessage.attachment.storedName ? [t.lastMessage.attachment] : []);
+                const attsLabel = atts.length ? '📎 ' + (atts.length === 1 ? atts[0].originalName : atts.length + ' files') : '';
+              %>
+                <%= t.lastMessage.senderRole === 'admin' ? 'Studio: ' : 'You: ' %><%= t.lastMessage.body || attsLabel %>
               <% } else { %>
                 <span class="text-gray-700">Say hello.</span>
               <% } %>
