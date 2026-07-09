@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "nodemon server.js",
     "tw": "npx @tailwindcss/cli -i ./src/input.css -o ./public/output.css --watch",
+    "build": "npx @tailwindcss/cli -i ./src/input.css -o ./public/output.css --minify",
+    "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -13,6 +15,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@tailwindcss/cli": "^4.3.1",
     "bcrypt": "^6.0.0",
     "connect-mongo": "^6.0.0",
     "cookie-parser": "^1.4.7",
@@ -29,7 +32,6 @@
     "tailwindcss": "^4.3.1"
   },
   "devDependencies": {
-    "@tailwindcss/cli": "^4.3.1",
     "nodemon": "^3.1.14"
   }
 }
