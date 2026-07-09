@@ -18,7 +18,8 @@ const Notification = require("./models/Notification");
 const AdminNotification = require("./models/AdminNotification");
 const Message = require("./models/Message");
 const LoginAttempt = require("./models/LoginAttempt");
-const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert, sendAdminPauseAlert, sendAdminUnexpectedPaymentAlert } = require("./lib/mailer");
+const PasswordResetToken = require("./models/PasswordResetToken");
+const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert, sendAdminPauseAlert, sendAdminUnexpectedPaymentAlert, sendPasswordResetEmail } = require("./lib/mailer");
 const { startInvoiceExpiryJob } = require("./lib/invoiceExpiry");
 
 function endOfDay(dateStr) {
@@ -110,6 +111,9 @@ dotenv.config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
+// Railway/Cloudflare terminate TLS in front of the app — trust their proxy so
+// secure cookies and req.secure reflect the real (https) protocol.
+app.set("trust proxy", 1);
 const httpServer = http.createServer(app);
 const io = new Server(httpServer);
 const PORT = process.env.PORT || 3000;
@@ -209,7 +213,10 @@ const sessionMiddleware = session({
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
-  cookie: { maxAge: 8 * 60 * 60 * 1000 }, // 8 hours
+  cookie: {
+    maxAge: 8 * 60 * 60 * 1000, // 8 hours
+    secure: process.env.NODE_ENV === "production",
+  },
 });
 app.use(sessionMiddleware);
 // Shares the same express-session with Socket.IO so a socket's handshake carries req.session
@@ -319,6 +326,7 @@ function assignVisitorId(req, res, next) {
       maxAge: VISITOR_ID_MAX_AGE,
       httpOnly: true,
       sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
     });
   }
   req.visitorId = vid;
@@ -908,27 +916,30 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
 
 const LOGIN_MAX_ATTEMPTS = 5;
 const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const RESET_MAX_ATTEMPTS = 3;
+const RESET_ATTEMPT_WINDOW_MS = 60 * 60 * 1000;
 
-// Failed-login lockout, same rolling-window pattern as enforceGuestSubmissionQuota
+// Rolling-window rate limiter, same DB-backed pattern as enforceGuestSubmissionQuota
 // and the nudge limiter above. /login keys on the attempted email; /admin/login has
 // no email to key on, so it uses the visitor cookie instead (see assignVisitorId).
-async function isLoginLocked(key) {
-  const since = new Date(Date.now() - LOGIN_ATTEMPT_WINDOW_MS);
+// /forgot-password keys on the submitted email too, capping inbox spam.
+async function isRateLimited(key, max, windowMs) {
+  const since = new Date(Date.now() - windowMs);
   const count = await LoginAttempt.countDocuments({ key, createdAt: { $gte: since } });
-  return count >= LOGIN_MAX_ATTEMPTS;
+  return count >= max;
 }
 
 // ── Client auth routes ──
 app.get("/login", (req, res) => {
   if (req.session.userId) return res.redirect("/dashboard");
-  res.render("login", { next: req.query.next || "/dashboard", cr: req.query.cr || "" });
+  res.render("login", { next: req.query.next || "/dashboard", cr: req.query.cr || "", reset: req.query.reset === "1" });
 });
 
 app.post("/login", async (req, res) => {
   const { email, password, next, cr } = req.body;
   const attemptKey = `login:${email?.trim().toLowerCase() || ""}`;
 
-  if (await isLoginLocked(attemptKey)) {
+  if (await isRateLimited(attemptKey, LOGIN_MAX_ATTEMPTS, LOGIN_ATTEMPT_WINDOW_MS)) {
     return res.render("login", { error: "Too many failed attempts. Please try again in a few minutes.", next: next || "/dashboard", cr });
   }
 
@@ -992,6 +1003,67 @@ app.post("/signup", async (req, res) => {
     console.error("Signup error:", err);
     res.redirect(`/hire/success?cr=${crCode}`);
   }
+});
+
+app.get("/forgot-password", (req, res) => {
+  if (req.session.userId) return res.redirect("/dashboard");
+  res.render("forgot-password", { submitted: false });
+});
+
+app.post("/forgot-password", async (req, res) => {
+  const email = req.body.email?.trim().toLowerCase() || "";
+  const attemptKey = `reset:${email}`;
+
+  // Always render the same neutral confirmation, whether or not the email is
+  // on file — avoids leaking account existence. Check before recording so the
+  // current attempt doesn't count against its own limit (see /login above).
+  if (email && !(await isRateLimited(attemptKey, RESET_MAX_ATTEMPTS, RESET_ATTEMPT_WINDOW_MS))) {
+    await LoginAttempt.create({ key: attemptKey });
+    const user = await User.findOne({ email });
+    if (user) {
+      await PasswordResetToken.deleteMany({ userId: user._id });
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+      await PasswordResetToken.create({ userId: user._id, tokenHash });
+      sendPasswordResetEmail(user, rawToken);
+    }
+  }
+
+  res.render("forgot-password", { submitted: true });
+});
+
+app.get("/reset-password/:token", async (req, res) => {
+  const tokenHash = crypto.createHash("sha256").update(req.params.token).digest("hex");
+  const tokenDoc = await PasswordResetToken.findOne({ tokenHash });
+  const valid = !!tokenDoc && Date.now() - tokenDoc.createdAt.getTime() < 60 * 60 * 1000;
+  res.render("reset-password", { valid, token: req.params.token, error: null });
+});
+
+app.post("/reset-password/:token", async (req, res) => {
+  const { newPassword, confirmPassword } = req.body;
+  const tokenHash = crypto.createHash("sha256").update(req.params.token).digest("hex");
+  const tokenDoc = await PasswordResetToken.findOne({ tokenHash });
+  const valid = !!tokenDoc && Date.now() - tokenDoc.createdAt.getTime() < 60 * 60 * 1000;
+
+  if (!valid) {
+    return res.render("reset-password", { valid: false, token: req.params.token, error: null });
+  }
+  if (!newPassword || newPassword.length < 8) {
+    return res.render("reset-password", { valid: true, token: req.params.token, error: "New password must be at least 8 characters." });
+  }
+  if (newPassword !== confirmPassword) {
+    return res.render("reset-password", { valid: true, token: req.params.token, error: "Passwords don't match." });
+  }
+
+  const user = await User.findById(tokenDoc.userId);
+  if (!user) {
+    return res.render("reset-password", { valid: false, token: req.params.token, error: null });
+  }
+  user.password = newPassword;
+  await user.save();
+  await PasswordResetToken.deleteMany({ userId: user._id });
+
+  res.redirect("/login?reset=1");
 });
 
 // Inject unread notification count into all /dashboard views
@@ -1243,7 +1315,7 @@ app.get("/admin/login", (req, res) => {
 app.post("/admin/login", async (req, res) => {
   const attemptKey = `admin:${req.visitorId}`;
 
-  if (await isLoginLocked(attemptKey)) {
+  if (await isRateLimited(attemptKey, LOGIN_MAX_ATTEMPTS, LOGIN_ATTEMPT_WINDOW_MS)) {
     return res.render("admin/login", { error: "Too many failed attempts. Please try again in a few minutes." });
   }
 
