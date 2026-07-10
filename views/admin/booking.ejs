@@ -82,15 +82,10 @@
 
   <main class="max-w-5xl mx-auto px-6 py-10 space-y-6">
 
-    <!-- Top row: client + status -->
-    <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-6">
-      <div>
-        <h1 class="text-2xl font-bold text-white"><%= booking.name %></h1>
-        <p class="text-gray-500 text-sm mt-1"><%= booking.email %> · <%= booking.location %></p>
-      </div>
-
+    <!-- Top row: status -->
+    <div class="flex flex-col sm:flex-row sm:items-start gap-6">
       <!-- Status picker -->
-      <div class="card p-4! flex flex-col gap-3 min-w-[220px]">
+      <div class="card p-4! flex flex-col gap-3 w-full">
         <p class="detail-label">Status</p>
         <% if (locals.statusError) { %>
         <div class="px-3 py-2 rounded-md bg-red-500/10 border border-red-500/25 text-red-400 text-xs">
@@ -184,7 +179,7 @@
         <!-- Files -->
         <% if (booking.filesDeleted) { %>
         <div class="card">
-          <p class="text-sm text-red-400">Uploaded files were permanently deleted by the client. The project brief above remains on record.</p>
+          <p class="text-sm text-red-400">Uploaded files were permanently deleted by the client. The project brief and final deliverables remain on record.</p>
         </div>
         <% } %>
         <% if (booking.uploadedFiles && booking.uploadedFiles.length > 0) { %>
@@ -247,6 +242,7 @@
         <% } %>
 
         <!-- Final deliverables -->
+        <% if (!booking.filesDeleted) { %>
         <div class="card">
           <h2 class="text-base font-semibold text-white mb-1">Final deliverables <span class="text-gray-600 font-normal text-sm"><%= (booking.deliverableFiles || []).length %></span></h2>
           <p class="text-xs text-gray-600 mb-4">
@@ -307,9 +303,7 @@
             <% }) %>
           </div>
           <% } %>
-          <% if (booking.archived && booking.filesDeleted) { %>
-          <p class="text-xs text-gray-600">Client permanently deleted this project — files can no longer be uploaded.</p>
-          <% } else if (booking.archived) { %>
+          <% if (booking.archived) { %>
           <p class="text-xs text-gray-600">Restore this booking to upload more final files.</p>
           <% } else { %>
           <form id="deliverables-form" action="/admin/booking/<%= booking._id %>/deliverables" method="POST" enctype="multipart/form-data">
@@ -334,6 +328,7 @@
           </script>
           <% } %>
         </div>
+        <% } %>
 
         <!-- Media links -->
         <% if (booking.mediaLinks && booking.mediaLinks.length > 0) { %>
@@ -359,23 +354,30 @@
           <h2 class="text-base font-semibold text-white mb-4">External links</h2>
           <div class="space-y-2">
             <% const PLATFORM_BASES = { Instagram: 'https://instagram.com/', Twitter: 'https://x.com/', TikTok: 'https://tiktok.com/', OnlyFans: 'https://onlyfans.com/', Fansly: 'https://fansly.com/', Pornhub: 'https://pornhub.com/', MannyVids: 'https://manyvids.com/' }; %>
+            <% const shorten = (s) => s.length > 16 ? s.slice(0, 8) + '…' + s.slice(-8) : s; %>
             <% booking.platforms.forEach(p => { %>
             <% const isUrl = /^https?:\/\//i.test(p.handle); %>
             <% const bare = p.handle.replace(/^@/, ''); %>
             <% const handlePath = p.platform === 'TikTok' ? `@${bare}` : bare; %>
             <% const href = isUrl ? p.handle : (PLATFORM_BASES[p.platform] ? PLATFORM_BASES[p.platform] + handlePath : null); %>
-            <% if (href) { %>
-            <a href="<%= href %>" target="_blank" rel="noopener"
-              class="flex items-center gap-2 text-sm text-amber-400 hover:text-amber-300 transition-colors group">
-              <span class="shrink-0 px-2 py-0.5 rounded-md bg-amber-400/10 border border-amber-400/20 text-[11px] font-semibold"><%= p.platform %></span>
-              <span class="truncate group-hover:underline"><%= p.handle %></span>
-            </a>
-            <% } else { %>
-            <div class="flex items-center gap-2 text-sm text-gray-300">
-              <span class="shrink-0 px-2 py-0.5 rounded-md bg-amber-400/10 border border-amber-400/20 text-[11px] font-semibold"><%= p.platform %></span>
-              <span class="truncate"><%= p.handle %></span>
+            <div class="flex items-center gap-2 text-sm">
+              <% if (href) { %>
+              <a href="<%= href %>" target="_blank" rel="noopener"
+                class="flex items-center gap-2 min-w-0 text-amber-400 hover:text-amber-300 transition-colors group">
+                <span class="shrink-0 px-2 py-0.5 rounded-md bg-amber-400/10 border border-amber-400/20 text-[11px] font-semibold"><%= p.platform %></span>
+                <span class="truncate group-hover:underline"><%= shorten(p.handle) %></span>
+              </a>
+              <% } else { %>
+              <span class="flex items-center gap-2 min-w-0 text-gray-300">
+                <span class="shrink-0 px-2 py-0.5 rounded-md bg-amber-400/10 border border-amber-400/20 text-[11px] font-semibold"><%= p.platform %></span>
+                <span class="truncate"><%= shorten(p.handle) %></span>
+              </span>
+              <% } %>
+              <button type="button" data-copy="<%= href || p.handle %>" onclick="copyLinkToClipboard(this);"
+                class="ml-auto shrink-0 p-1 rounded-md text-gray-500 hover:text-amber-300 hover:bg-white/5 transition-colors">
+                <iconify-icon icon="material-symbols-light:content-copy-outline" width="15" height="15"></iconify-icon>
+              </button>
             </div>
-            <% } %>
             <% }) %>
           </div>
         </div>
@@ -446,10 +448,10 @@
           </div>
           <% } %>
           <form action="/admin/booking/<%= booking._id %>/notes" method="POST" class="space-y-3">
-            <textarea name="note" placeholder="Add a note…"
-              class="w-full h-12 bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-amber-400/50 resize-none"></textarea>
-            <button type="submit"
-              class="w-full px-4 py-2.5 rounded-full border border-white/10 text-sm text-gray-300 hover:text-white hover:border-white/25 transition-colors">
+            <textarea name="note" placeholder="Add a note…" <% if (booking.archived) { %>disabled<% } %>
+              class="w-full h-12 bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-amber-400/50 resize-none disabled:opacity-40 disabled:cursor-not-allowed"></textarea>
+            <button type="submit" <% if (booking.archived) { %>disabled<% } %>
+              class="w-full px-4 py-2.5 rounded-full border border-white/10 text-sm text-gray-300 hover:text-white hover:border-white/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-300 disabled:hover:border-white/10">
               Add note
             </button>
           </form>
@@ -494,7 +496,7 @@
 
           <% if (booking.depositStatus === 'none') { %>
           <%
-            const canSendDeposit = booking.status === 'in-review' || booking.status === 'accepted' || booking.status === 'in-progress';
+            const canSendDeposit = !booking.archived && (booking.status === 'in-review' || booking.status === 'accepted' || booking.status === 'in-progress');
           %>
           <form action="/admin/booking/<%= booking._id %>/send-deposit" method="POST" class="space-y-3">
             <div>
@@ -534,7 +536,9 @@
               Send Deposit Invoice (30%)
             </button>
           </form>
-          <% if (!canSendDeposit) { %>
+          <% if (!canSendDeposit && booking.archived) { %>
+          <p class="text-xs text-gray-600 mt-2">Restore this booking to enable invoicing.</p>
+          <% } else if (!canSendDeposit) { %>
           <p class="text-xs text-gray-600 mt-2">Set status to <span class="text-gray-400">In Review</span> or higher to enable invoicing.</p>
           <% } %>
 
@@ -632,6 +636,65 @@
           </div>
           <% } %>
         </div>
+
+        <% if (booking.stripeCustomerId && !booking.archived) { %>
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-1">Revision invoices</h2>
+          <p class="text-xs text-gray-600 mb-4">Bill the client for extra revision work outside what's included.</p>
+
+          <% if (booking.revisionInvoices && booking.revisionInvoices.length > 0) { %>
+          <div class="space-y-2 mb-4">
+            <% [...booking.revisionInvoices].reverse().forEach(ri => { %>
+            <div class="flex items-center justify-between gap-3 border border-white/5 rounded-md px-3 py-2.5">
+              <div class="flex items-center gap-2.5">
+                <div class="w-2 h-2 rounded-full shrink-0 <%= ri.status === 'paid' ? 'bg-green-400' : ri.status === 'void' ? 'bg-gray-600' : 'bg-amber-400' %>"></div>
+                <div>
+                  <p class="text-sm text-white font-medium">$<%= ri.amount.toFixed(2) %></p>
+                  <p class="text-xs text-gray-500">
+                    <%= new Date(ri.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %>
+                    · <%= ri.status === 'paid' ? 'Paid' : ri.status === 'void' ? 'Void' : 'Awaiting payment' %>
+                  </p>
+                  <% if (ri.status === 'pending' && ri.dueDate) { %>
+                  <p class="text-xs text-amber-400 mt-0.5">Due by <%= new Date(ri.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %></p>
+                  <% } %>
+                </div>
+              </div>
+              <% if (ri.invoiceUrl) { %>
+              <a href="<%= ri.invoiceUrl %>" target="_blank" rel="noopener"
+                class="text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1 rounded-full border border-amber-400/30 hover:border-amber-400/60 whitespace-nowrap shrink-0">
+                View
+              </a>
+              <% } %>
+            </div>
+            <% }) %>
+          </div>
+          <% } %>
+
+          <form action="/admin/booking/<%= booking._id %>/send-revision-invoice" method="POST" class="space-y-3">
+            <div>
+              <label class="detail-label block mb-1">Amount (USD)</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none">$</span>
+                <input type="number" name="amount" min="1" step="0.01" value="<%= ADDON_PRICES['Extra revision'] %>" required
+                  class="w-full bg-white/5 border border-white/10 rounded-md pl-6 pr-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
+              </div>
+            </div>
+            <div>
+              <label class="detail-label block mb-1">Due date</label>
+              <%
+                const _revDefaultDue = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+                const _revMinDue = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+              %>
+              <input type="date" name="dueDate" required value="<%= _revDefaultDue %>" min="<%= _revMinDue %>"
+                class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
+            </div>
+            <button type="submit"
+              class="w-full px-4 py-2.5 rounded-full bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 text-sm font-semibold border border-amber-400/30 transition-colors">
+              Send revision invoice
+            </button>
+          </form>
+        </div>
+        <% } %>
 
         <% if (booking.depositStatus === 'paid') { %>
         <div class="card">
@@ -827,6 +890,12 @@
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>';
       });
+    }
+
+    function copyLinkToClipboard(btn) {
+      navigator.clipboard.writeText(btn.dataset.copy)
+        .then(() => showToast('Copied', 'Link copied to clipboard.'))
+        .catch(() => showToast('Copy failed', 'Could not copy link.', 'error'));
     }
   </script>
 

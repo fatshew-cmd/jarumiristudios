@@ -24,7 +24,7 @@ const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAcceptanceEmail, 
 const { startInvoiceExpiryJob } = require("./lib/invoiceExpiry");
 const { fileTypeFromMime, uniqueFilename } = require("./lib/uploadUtils");
 const { createR2Storage } = require("./lib/r2MulterStorage");
-const { getPresignedDownloadUrl, deleteObject, deleteObjectsByPrefix } = require("./lib/r2");
+const { getPresignedDownloadUrl, deleteObject, deleteObjectsByPrefixExcept } = require("./lib/r2");
 
 function endOfDay(dateStr) {
   if (!dateStr) return null;
@@ -162,6 +162,13 @@ app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (r
               if (booking.deliverableFiles?.length > 0) {
                 notifMsg += " Your final files are ready to download.";
               }
+            }
+          } else {
+            const revisionInvoice = booking.revisionInvoices.find((ri) => ri.invoiceId === invoice.id);
+            if (revisionInvoice) {
+              revisionInvoice.status = "paid";
+              paymentType = "revision";
+              notifMsg = `Payment received for the revision invoice on project ${booking.crCode}. Thanks!`;
             }
           }
           await booking.save();
@@ -566,28 +573,38 @@ function retrySync(fn, attempts = 4, delayMs = 250) {
   }
 }
 
-// Permanently removes uploaded media for a booking while keeping booking.txt as a record.
+// Permanently removes a booking's client-submitted media (raw uploads, chat attachments) while
+// keeping booking.txt and the delivered final files as a record — deliverables live in their own
+// "deliverables" subfolder, so skipping it here is what keeps them intact.
 // Synchronous and awaited-in-order by archiveAndWipeBookingFiles below — the async fire-and-forget
 // version of this raced the folder rename that follows it (rm still mid-flight on the "files"
 // subtree when rename tried to move the parent folder), which intermittently lost the race and
 // left the folder sitting in the active uploads/ path, wiped but never archived.
 function hardDeleteBookingFiles(crCode) {
   if (!crCode) return;
-  fs.rmSync(path.join(__dirname, "uploads", crCode, "files"), { recursive: true, force: true });
-  fs.rmSync(path.join(__dirname, "uploads", "_archive", crCode, "files"), { recursive: true, force: true });
+  for (const base of [path.join(__dirname, "uploads", crCode), path.join(__dirname, "uploads", "_archive", crCode)]) {
+    const filesDir = path.join(base, "files");
+    if (!fs.existsSync(filesDir)) continue;
+    for (const folder of fs.readdirSync(filesDir)) {
+      if (folder === "deliverables") continue;
+      fs.rmSync(path.join(filesDir, folder), { recursive: true, force: true });
+    }
+  }
 }
 
 // Client-initiated "delete" — unlike admin archive (which just hides a project, files intact
-// and restorable), this is meant to be irreversible: media is wiped and only the booking.txt
-// record survives, tucked into _archive alongside admin-archived projects.
-async function archiveAndWipeBookingFiles(crCode) {
+// and restorable), this is meant to be irreversible for everything except delivered final
+// files: raw uploads and chat attachments are wiped, but deliverables are kept on record so
+// there's still proof of what was actually handed over. Only the booking.txt record and the
+// deliverables survive, tucked into _archive alongside admin-archived projects.
+async function archiveAndWipeBookingFiles(crCode, deliverableStorageKeys = []) {
   if (!crCode) return;
   try {
     retrySync(() => hardDeleteBookingFiles(crCode));
-    // R2 keys are flat (`<crCode>/<storedName>`), so one prefix wipes every uploaded file,
-    // deliverable, and chat attachment for this booking in a single list+batch-delete —
-    // covers what the local recursive rm above did for any files already on R2.
-    await deleteObjectsByPrefix(`${crCode}/`);
+    // R2 keys are flat (`<crCode>/<storedName>`), so one prefix covers every uploaded file,
+    // deliverable, and chat attachment for this booking — deliverableStorageKeys is excluded
+    // from the batch-delete so those specific objects survive.
+    await deleteObjectsByPrefixExcept(`${crCode}/`, deliverableStorageKeys);
     const archiveDir = path.join(__dirname, "uploads", "_archive");
     fs.mkdirSync(archiveDir, { recursive: true });
     retrySync(() => fs.renameSync(path.join(__dirname, "uploads", crCode), path.join(archiveDir, crCode)));
@@ -684,10 +701,11 @@ async function attachCrCode(req, res, next) {
 // Client-side equivalent of attachCrCode above — also verifies the booking belongs to the
 // logged-in client before any multer disk write happens.
 async function attachCrCodeForClient(req, res, next) {
-  const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId }).select("crCode archived clientId name uploadedFiles deliverableFiles status");
+  const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId }).select("crCode archived chatBlocked clientId name uploadedFiles deliverableFiles status");
   if (!booking) return res.sendStatus(403);
   if (booking.archived) return res.sendStatus(403);
   if (!booking.chatUnlocked) return res.status(403).json({ error: "Chat opens once this project is accepted." });
+  if (booking.chatBlocked) return res.status(403).json({ error: "You've been restricted from sending messages on this project." });
   req.crCode = booking.crCode;
   req.booking = booking;
   next();
@@ -1145,14 +1163,15 @@ app.post("/dashboard/account/delete", requireClient, async (req, res) => {
   }
 
   // Deleting the account cascades exactly like deleting each project individually — same
-  // irreversible file wipe — since an orphaned clientId would otherwise leave every project's
-  // raw footage and deliverables stranded on disk with no owner able to reach or clean them up.
-  const bookings = await BookingRequest.find({ clientId: user._id, filesDeleted: { $ne: true } }).select("crCode");
+  // irreversible wipe of raw footage and chat attachments — since an orphaned clientId would
+  // otherwise leave them stranded on disk with no owner able to reach or clean them up.
+  // Delivered final files are kept on record (see archiveAndWipeBookingFiles).
+  const bookings = await BookingRequest.find({ clientId: user._id, filesDeleted: { $ne: true } }).select("crCode deliverableFiles");
   await BookingRequest.updateMany(
     { clientId: user._id },
-    { filesDeleted: true, uploadedFiles: [], deliverableFiles: [], archived: true }
+    { filesDeleted: true, uploadedFiles: [], archived: true }
   );
-  bookings.forEach((b) => archiveAndWipeBookingFiles(b.crCode));
+  bookings.forEach((b) => archiveAndWipeBookingFiles(b.crCode, (b.deliverableFiles || []).map((f) => f.storageKey)));
 
   await User.findByIdAndDelete(user._id);
   req.session.destroy(() => res.redirect("/"));
@@ -1186,9 +1205,9 @@ app.get("/dashboard/booking/:id", requireClient, async (req, res) => {
 app.post("/dashboard/booking/:id/delete", requireClient, async (req, res) => {
   const booking = await BookingRequest.findOneAndUpdate(
     { _id: req.params.id, clientId: req.session.userId },
-    { filesDeleted: true, uploadedFiles: [], deliverableFiles: [], archived: true }
+    { filesDeleted: true, uploadedFiles: [], archived: true }
   );
-  archiveAndWipeBookingFiles(booking?.crCode);
+  archiveAndWipeBookingFiles(booking?.crCode, (booking?.deliverableFiles || []).map((f) => f.storageKey));
   res.redirect("/dashboard");
 });
 
@@ -1654,6 +1673,20 @@ app.post("/admin/booking/:id/messages/:messageId/delete", requireAdmin, async (r
   res.json({ ok: true });
 });
 
+// Mutes the client on this project's chat — they keep read access to the thread but can't send.
+// Independent of chatUnlocked (project-phase gating): the admin can block regardless of status.
+// JSON response (not a redirect) since this is triggered from within the chat panel via fetch,
+// same as the other in-thread actions (delete message, cancel download).
+app.post("/admin/booking/:id/chat-block", requireAdmin, async (req, res) => {
+  await BookingRequest.findByIdAndUpdate(req.params.id, { chatBlocked: true });
+  res.json({ ok: true, chatBlocked: true });
+});
+
+app.post("/admin/booking/:id/chat-unblock", requireAdmin, async (req, res) => {
+  await BookingRequest.findByIdAndUpdate(req.params.id, { chatBlocked: false });
+  res.json({ ok: true, chatBlocked: false });
+});
+
 async function adminMessageThreads() {
   const bookings = await BookingRequest.find({ clientId: { $ne: null } })
     .select("crCode name serviceType status archived createdAt")
@@ -2078,6 +2111,71 @@ app.post("/admin/booking/:id/send-final", requireAdmin, async (req, res) => {
     }
   } catch (err) {
     console.error("Stripe final invoice error:", err.message);
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
+  }
+
+  res.redirect(`/admin/booking/${req.params.id}`);
+});
+
+// Ad-hoc invoice for extra revision work — unlike deposit/final there's no cap, a project can
+// get several of these over its life. Requires stripeCustomerId (set the first time a deposit
+// invoice goes out), since a revision charge only makes sense once work is already underway.
+app.post("/admin/booking/:id/send-revision-invoice", requireAdmin, async (req, res) => {
+  const booking = await BookingRequest.findById(req.params.id);
+  if (!booking || booking.archived || !booking.stripeCustomerId) {
+    return res.redirect(`/admin/booking/${req.params.id}`);
+  }
+
+  const amount = parseFloat(req.body.amount) || ADDON_PRICES["Extra revision"];
+  if (amount <= 0) return res.redirect(`/admin/booking/${req.params.id}`);
+
+  const dueDate = endOfDay(req.body.dueDate);
+  if (!dueDate || dueDate < minDueDate()) {
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(`Due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`)}`);
+  }
+
+  try {
+    const invoice = await stripe.invoices.create({
+      customer: booking.stripeCustomerId,
+      collection_method: "send_invoice",
+      due_date: Math.floor(dueDate.getTime() / 1000),
+      currency: "usd",
+      metadata: { crCode: booking.crCode },
+    });
+
+    await stripe.invoiceItems.create({
+      customer: booking.stripeCustomerId,
+      invoice: invoice.id,
+      amount: Math.round(amount * 100),
+      currency: "usd",
+      description: `Revision fee — Jarumiri Studios (${booking.crCode})`,
+    });
+
+    const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
+    await stripe.invoices.sendInvoice(invoice.id);
+
+    booking.revisionInvoices.push({
+      invoiceId: invoice.id,
+      invoiceUrl: finalized.hosted_invoice_url,
+      amount,
+      dueDate,
+      status: "pending",
+    });
+    await booking.save();
+
+    sendAdminInvoiceAlert(booking, "revision", amount, finalized.hosted_invoice_url);
+
+    if (booking.clientId) {
+      await Notification.create({
+        userId: booking.clientId,
+        bookingId: booking._id,
+        crCode: booking.crCode,
+        type: "invoice_sent",
+        message: `A revision invoice ($${amount.toFixed(2)}) has been sent for project ${booking.crCode}. You can review it and pay anytime from your project page.`,
+      });
+    }
+  } catch (err) {
+    console.error("Stripe revision invoice error:", err.message);
     return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
   }
 

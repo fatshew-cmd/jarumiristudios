@@ -59,11 +59,68 @@
     return 'material-symbols-light:attach-file';
   }
 
-  function loadingOverlayHtml() {
-    return '<span class="thumb-loading-overlay"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-      '<circle cx="12" cy="12" r="9" stroke="rgba(255,255,255,0.25)" stroke-width="3"></circle>' +
-      '<path d="M21 12a9 9 0 0 0-9-9" stroke="#fff" stroke-width="3" stroke-linecap="round"></path></svg></span>';
+  // contextSize mirrors downloadIconHtml's — picks the icon shown if the load is cancelled and
+  // the thumbnail reverts to the idle "tap to download" state.
+  function loadingOverlayHtml(contextSize) {
+    return '<button type="button" class="thumb-loading-overlay thumb-cancel-btn" ' +
+      'onclick="event.preventDefault(); event.stopPropagation(); window.cancelEagerMediaLoad(this.closest(\'[data-download-url]\'), ' + JSON.stringify(String(contextSize)) + ');" title="Stop loading">' +
+      '<span class="thumb-btn-badge">' +
+        '<svg class="thumb-spin-ring" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+          '<circle cx="12" cy="12" r="9" stroke="rgba(255,255,255,0.25)" stroke-width="3"></circle>' +
+          '<path d="M21 12a9 9 0 0 0-9-9" stroke="#fff" stroke-width="3" stroke-linecap="round"></path>' +
+        '</svg>' +
+        '<iconify-icon icon="material-symbols-light:close" width="16" height="16" class="thumb-cancel-icon"></iconify-icon>' +
+      '</span></button>';
   }
+
+  // Static placeholder swapped in when an <img>/<video> fails to load — e.g. an archived project
+  // whose files were permanently deleted (see server.js archiveAndWipeBookingFiles). Only the big
+  // bubble-preview thumbnail (contextSize 28) has room for the explanatory text; the small 13px
+  // tagged-inline badge just gets the icon.
+  function mediaErrorOverlayHtml(contextSize) {
+    var big = Number(contextSize) >= 20;
+    return '<span class="thumb-error-overlay" title="This file is no longer available">' +
+      '<iconify-icon icon="material-symbols-light:broken-image-outline" width="' + (big ? 26 : 16) + '" height="' + (big ? 26 : 16) + '"></iconify-icon>' +
+      (big ? '<span class="thumb-error-text">This file is no longer available</span>' : '') +
+      '</span>';
+  }
+
+  window.handleMediaLoadError = function (el, contextSize) {
+    var container = el && el.closest('[data-download-url]');
+    if (!container) return;
+    container.classList.remove('media-loaded');
+    container.innerHTML = mediaErrorOverlayHtml(contextSize);
+    // The container itself has no link semantics — it's the enclosing .attachment-badge/
+    // .tagged-inline-badge <a> (href + the openFileViewer click-through) that needs neutralizing,
+    // otherwise a file we just told the user is gone still opens the viewer or attempts a download.
+    var link = container.closest('a');
+    if (link) {
+      link.removeAttribute('href');
+      link.removeAttribute('download');
+      link.title = 'This file is no longer available';
+      link.classList.add('attachment-unavailable');
+      link.onclick = function (e) { e.preventDefault(); };
+    }
+  };
+
+  // Cancels an in-flight *eager* media load (the sender's own attachments, or ones already marked
+  // downloaded, render straight into an <img>/<video> src rather than going through the lazy
+  // download flow) by clearing the src to abort the browser's fetch, then reverting the thumbnail
+  // to the idle "tap to download" state so the user can retry on their own terms.
+  window.cancelEagerMediaLoad = function (container, contextSize) {
+    if (!container) return;
+    var media = container.querySelector('img, video');
+    if (media) {
+      media.removeAttribute('src');
+      if (media.tagName === 'VIDEO') media.load();
+    }
+    container.classList.remove('media-loaded');
+    container.classList.add('lazy-attachment');
+    container.innerHTML = downloadIconHtml(contextSize);
+    // Same debounce as the other idle-icon reverts, so a fast double-click doesn't instantly re-download.
+    container.classList.add('retry-cooldown');
+    setTimeout(function () { container.classList.remove('retry-cooldown'); }, 500);
+  };
 
   // Progress ring shown on pending/downloading attachment thumbnails — its stroke-dashoffset is
   // driven by real XHR progress, so the ring fills at the transfer's own rate.
@@ -294,9 +351,9 @@
     if (lazy) {
       thumbInner = downloadIconHtml(28);
     } else if (isImage) {
-      thumbInner = '<img src="' + attUrl + '" alt="" onload="this.closest(\'.badge-thumb\').classList.add(\'media-loaded\')" />' + loadingOverlayHtml();
+      thumbInner = '<img src="' + attUrl + '" alt="" onload="this.closest(\'.badge-thumb\').classList.add(\'media-loaded\')" onerror="window.handleMediaLoadError(this, 28)" />' + loadingOverlayHtml(28);
     } else if (isVideo) {
-      thumbInner = '<video src="' + attUrl + '" muted preload="metadata" onloadeddata="this.closest(\'.badge-thumb\').classList.add(\'media-loaded\')"></video>' + loadingOverlayHtml();
+      thumbInner = '<video src="' + attUrl + '" muted preload="metadata" onloadeddata="this.closest(\'.badge-thumb\').classList.add(\'media-loaded\')" onerror="window.handleMediaLoadError(this, 28)"></video>' + loadingOverlayHtml(28);
     } else if (isAudio) {
       thumbInner = '<iconify-icon icon="material-symbols-light:music-note-2" width="32" height="32" style="color:#f59e0b;"></iconify-icon>';
     } else {
@@ -329,9 +386,9 @@
     if (lazy) {
       thumbInner = downloadIconHtml(13);
     } else if (isImage) {
-      thumbInner = '<img src="' + attUrl + '" alt="" onload="this.closest(\'.tagged-inline-thumb\').classList.add(\'media-loaded\')" />' + loadingOverlayHtml();
+      thumbInner = '<img src="' + attUrl + '" alt="" onload="this.closest(\'.tagged-inline-thumb\').classList.add(\'media-loaded\')" onerror="window.handleMediaLoadError(this, 13)" />' + loadingOverlayHtml(13);
     } else if (isVideo) {
-      thumbInner = '<video src="' + attUrl + '" muted preload="metadata" onloadeddata="this.closest(\'.tagged-inline-thumb\').classList.add(\'media-loaded\')"></video>' + loadingOverlayHtml();
+      thumbInner = '<video src="' + attUrl + '" muted preload="metadata" onloadeddata="this.closest(\'.tagged-inline-thumb\').classList.add(\'media-loaded\')" onerror="window.handleMediaLoadError(this, 13)"></video>' + loadingOverlayHtml(13);
     } else if (/^audio\//i.test(attachment.mimetype)) {
       thumbInner = '<iconify-icon icon="material-symbols-light:music-note-2" width="13" height="13" style="color:#f59e0b;"></iconify-icon>';
     } else {
@@ -619,6 +676,16 @@
     fetch(postPath + '/' + messageId + '/delete', { method: 'POST' }).then(function (res) {
       if (res.ok) { applyMessageDeleted(messageId); return; }
       if (typeof showToast === 'function') showToast('Could not delete message', 'Please try again.', 'error');
+    });
+  };
+
+  // Admin-only mute toggle — isCurrentlyBlocked is the state *before* the click, so we hit
+  // whichever endpoint flips it the other way.
+  window.toggleChatBlock = function (bookingId, isCurrentlyBlocked) {
+    var action = isCurrentlyBlocked ? 'chat-unblock' : 'chat-block';
+    fetch('/admin/booking/' + bookingId + '/' + action, { method: 'POST' }).then(function (res) {
+      if (res.ok) { location.reload(); return; }
+      if (typeof showToast === 'function') showToast('Action failed', 'Please try again.', 'error');
     });
   };
 

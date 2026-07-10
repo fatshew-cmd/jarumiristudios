@@ -73,8 +73,23 @@ const bookingRequestSchema = new mongoose.Schema(
         status: { type: String, enum: ["pending", "reviewed"], default: "pending" },
       },
     ],
+    // Ad-hoc invoices for extra revision work, sent one at a time (unlike deposit/final there's
+    // no cap — a project can rack up several over its life), each tracked independently.
+    revisionInvoices: [
+      {
+        invoiceId: { type: String },
+        invoiceUrl: { type: String },
+        amount: { type: Number },
+        dueDate: { type: Date },
+        status: { type: String, enum: ["pending", "paid", "void"], default: "pending" },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
     archived: { type: Boolean, default: false },
     filesDeleted: { type: Boolean, default: false },
+    // Admin-only mute — client keeps read access to the thread but can't send. Independent of
+    // chatUnlocked (which gates the thread on project phase, not moderation).
+    chatBlocked: { type: Boolean, default: false },
     adminNotes: [
       {
         text: { type: String, required: true, trim: true },

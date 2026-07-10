@@ -421,7 +421,7 @@
         </button>
         <span id="extra-files-label" class="text-xs text-gray-500">No files selected</span>
         <button type="button" id="extra-files-submit" onclick="uploadExtraFiles('<%= booking._id %>')" disabled
-          class="px-5 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+          class="px-5 py-2.5 rounded-full bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 text-sm font-semibold border border-amber-400/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
           Upload
         </button>
       </div>
@@ -590,7 +590,7 @@
       <form action="/dashboard/booking/<%= booking._id %>/revision" method="POST">
         <textarea name="message" rows="4" placeholder="Describe the revision you need..." required></textarea>
         <button type="submit"
-          class="block w-full mt-3 px-6 py-3 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
+          class="block w-full mt-3 px-6 py-3 rounded-full bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 text-sm font-semibold border border-amber-400/30 transition-colors">
           Submit revision request
         </button>
       </form>
