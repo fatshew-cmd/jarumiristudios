@@ -1,7 +1,28 @@
 <!-- Thread header -->
+<%
+  const headerThumbFile = (booking.uploadedFiles || []).find(f => f.mimetype && /^(video|image)\//i.test(f.mimetype));
+  const headerThumbSrc = headerThumbFile ? '/admin/uploads/' + headerThumbFile.storedName : null;
+  const headerThumbIsVideo = /^video\//i.test((headerThumbFile || {}).mimetype || '');
+%>
 <div class="flex items-center gap-3 px-5 py-4 border-b border-white/5 shrink-0">
-  <button type="button" onclick="showList()" class="lg:hidden text-gray-500 hover:text-white transition-colors text-sm">← Chats</button>
-  <span class="font-mono text-amber-400 text-sm font-semibold"><%= booking.crCode %></span>
+  <button type="button" onclick="showList()" class="lg:hidden text-gray-500 hover:text-white transition-colors shrink-0">
+    <iconify-icon icon="material-symbols-light:chevron-left" width="24" height="24"></iconify-icon>
+  </button>
+  <a href="/admin/booking/<%= booking._id %>" class="flex items-center gap-3 min-w-0 hover:opacity-80 transition-opacity">
+    <div class="thread-icon shrink-0" style="width: 2.5rem; height: 2.5rem;">
+      <% if (headerThumbSrc && headerThumbIsVideo) { %>
+      <video src="<%= headerThumbSrc %>" muted preload="metadata" onerror="handleThreadThumbError(this)"></video>
+      <% } else if (headerThumbSrc) { %>
+      <img src="<%= headerThumbSrc %>" alt="" onerror="handleThreadThumbError(this)" />
+      <% } else { %>
+      <iconify-icon icon="material-symbols-light:chat" width="15" height="15" style="color:#f59e0b"></iconify-icon>
+      <% } %>
+    </div>
+    <div class="min-w-0">
+      <p class="text-base font-semibold text-white truncate"><%= booking.name %></p>
+      <p class="font-mono text-amber-400 text-xs font-semibold"><%= booking.crCode %></p>
+    </div>
+  </a>
   <% if (booking.filesDeleted) { %>
   <span class="px-2 py-0.5 rounded-md bg-red-500/10 border border-red-500/25 text-red-400 text-[11px] font-semibold">Deleted — files removed</span>
   <% } else if (booking.archived) { %>
@@ -16,11 +37,10 @@
     <iconify-icon icon="material-symbols-light:block" width="15" height="15"></iconify-icon>
     <%= booking.chatBlocked ? 'Unblock' : 'Block' %>
   </button>
-  <a href="/admin/booking/<%= booking._id %>" class="text-gray-500 hover:text-white transition-colors text-xs">View project →</a>
 </div>
 
 <!-- Message list -->
-<div id="message-list" class="flex-1 overflow-y-auto px-5 py-5">
+<div id="message-list" class="flex-1 min-h-0 overflow-y-auto px-5 py-5">
   <%
     function dayLabel(date) {
       const now = new Date();
@@ -291,7 +311,7 @@
   This project's recipient is currently blocked. Unblock first to send messages.
 </div>
 <% } %>
-<form id="composer" class="flex flex-col gap-2 px-5 py-4 border-t border-white/5 shrink-0" enctype="multipart/form-data" data-post-path="<%= postPath %>" data-attachment-base="<%= attachmentBasePath %>" data-my-role="<%= myRole %>" data-booking-name="<%= booking.name %>" data-status-bucket="<%= booking.status === 'completed' ? 'completed' : 'active' %>">
+<form id="composer" class="flex flex-col gap-2 px-5 pt-4 border-t border-white/5 shrink-0" style="padding-bottom: max(1rem, env(safe-area-inset-bottom))" enctype="multipart/form-data" data-post-path="<%= postPath %>" data-attachment-base="<%= attachmentBasePath %>" data-my-role="<%= myRole %>" data-booking-name="<%= booking.name %>" data-status-bucket="<%= booking.status === 'completed' ? 'completed' : 'active' %>">
   <div id="attachment-preview-list" class="hidden flex-wrap gap-2"></div>
   <div class="flex items-end gap-2">
     <button type="button" id="attach-btn" <%= composerLocked ? 'disabled' : '' %>

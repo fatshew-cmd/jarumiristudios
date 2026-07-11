@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title><%= typeof booking !== 'undefined' && booking ? booking.crCode + ' · ' : '' %>Messages | Jarumiri Studios</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
   <link rel="stylesheet" href="/output.css" />
@@ -31,11 +31,11 @@
       background: #f59e0b; color: #000; font-size: 10px; font-weight: 700;
     }
 
-    .messenger { display: flex; height: calc(100vh - 56px); }
-    @media (min-width: 1024px) { .messenger { height: 100vh; } }
+    .messenger { display: flex; height: calc(100vh - 56px); height: calc(100dvh - 56px); }
+    @media (min-width: 1024px) { .messenger { height: 100vh; height: 100dvh; } }
 
-    .chat-list-col { width: 360px; flex-shrink: 0; border-right: 1px solid rgba(255,255,255,0.05); overflow-y: auto; }
-    .thread-panel-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .chat-list-col { width: 360px; flex-shrink: 0; min-height: 0; border-right: 1px solid rgba(255,255,255,0.05); overflow-y: auto; }
+    .thread-panel-col { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
     @media (max-width: 1023px) {
       .messenger.thread-active .chat-list-col { display: none; }
       .messenger:not(.thread-active) .thread-panel-col { display: none; }
