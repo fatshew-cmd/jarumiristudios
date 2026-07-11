@@ -4,8 +4,10 @@
 
 | Route | Page | Purpose |
 |-------|------|---------|
-| `/` | Landing | Hero, reel, services, in-page `#pricing` section (Clip/Scene/Feature/Custom + add-ons), about, footer — no standalone `/pricing` route |
-| `/hire` | Request Form | Name, location, email, client type (Independent Creator/Agency/Studio/Brand-Business/Other, required), 1–3 required external platform links (Instagram/Twitter/TikTok/OnlyFans/Fansly/Fanview/MannyVids/Pornhub/Other), services, pricing tier + add-ons, coupon codes (up to 3, stackable/compounding), project brief, media links (only shown once upload-trusted), direct file upload gated on `hasTrustedDepositHistory` (a prior paid booking) — untrusted first-time clients submit with no direct upload at all, large files go through Messages post-signup instead |
+| `/` | Landing | Hero, reel, services, in-page `#pricing` section (Clip/Scene/Feature/Custom + add-ons), about, footer — no standalone `/pricing` route; "Careers" nav link points at `/career` (the old hardcoded `#career` homepage section was removed) |
+| `/career` | Careers | DB-driven list of open `Role` postings; each card (and a generic "apply anyway" prompt) opens a shared application modal (`views/_application-modal.ejs`) — Name/Email/Message/optional file (up to 200MB, video/audio/image/PDF/archive) — posting to `POST /career/apply` |
+| `POST /career/apply` | — | Creates an `Application` (own `appCode`, same random-code pattern as a booking's `crCode`); rate-limited to 1 per rolling 24h per visitor cookie regardless of login state (applicants have no account concept); emails admin via `sendAdminNewApplicationAlert` |
+| `/hire` | Request Form | Name, location, email, client type (Independent Creator/Agency/Studio/Brand-Business/Other, required), 1–3 required external platform links (Instagram/Twitter/TikTok/OnlyFans/Fansly/Fanview/MannyVids/Pornhub/Other), services, pricing tier + add-ons, coupon codes (up to 3, stackable/compounding), project brief, media links (only shown once upload-trusted), direct file upload gated on `hasTrustedDepositHistory` (a prior paid booking) — untrusted first-time clients submit with no direct upload at all, large files go through Messages post-signup instead. Client type and platform links are editable widgets for guests, but for a logged-in client who's already saved them to their `User` account (see `/dashboard/account`) they're carried through as locked hidden inputs instead of re-asked |
 | `GET /hire/success` | Post-submit | Shown to guests after submitting; offers inline account creation to track the booking going forward |
 | `POST /hire/coupon/validate` | — | AJAX coupon validation for the `/hire` form |
 | `POST /signup` | — | Inline signup from `/hire/success` — creates a `User`, links the just-submitted booking via `crCode`, logs in |
@@ -20,8 +22,8 @@
 | Route | Page | Purpose |
 |-------|------|---------|
 | `/dashboard` | Client Dashboard | All submitted requests, statuses, payment progress |
-| `/dashboard/new` | New Project | Gated on profile completeness (name + location) before letting a client start a fresh `/hire` submission |
-| `/dashboard/booking/:id` | Booking Detail | Full detail of one request; client can submit revision requests, delete the project |
+| `/dashboard/new` | New Project | Gated on profile completeness (name, location, client type, and 1–3 platform links) before letting a client start a fresh `/hire` submission — client type/platforms are asked once here and then reused (locked) on every future submission instead of being re-collected per project |
+| `/dashboard/booking/:id` | Booking Detail | Full detail of one request; client can submit revision requests, delete the project; sidebar has a Messages card (links to the thread, unread-count badge) once `chatUnlocked` |
 | `POST /dashboard/booking/:id/revision` | — | Client submits a revision request message on their booking |
 | `POST /dashboard/booking/:id/pause` | — | Client pauses their project (`status: "paused"`); emails admin via `sendAdminPauseAlert`; blocked once already declined/completed/paused/archived |
 | `POST /dashboard/booking/:id/nudge` | — | Client asks for an update; creates an `AdminNotification` (`type: "nudge"`) instead of emailing; rate-limited to 3 per booking per rolling hour (`429` JSON error past that) |
@@ -33,12 +35,27 @@
 | `POST /dashboard/notifications/mark-all-read` | — | Marks all notifications read, redirects back to the notifications page |
 | `GET /api/notifications/poll` | — | Polling endpoint for live unread count + new items since a timestamp |
 | `POST /api/notifications/mark-read` | — | Marks all notifications read (JSON response, used by poll-driven UI) |
-| `/dashboard/account` | Account Settings | Edit profile (name, location, account type, external website/portfolio link — both optional, distinct from the per-booking `clientType`/`platforms` collected on `/hire`), change password, delete account |
-| `/dashboard/messages` | Messages Inbox | List of every project thread with unread indicators, sorted by most recent activity |
+| `/dashboard/account` | Account Settings | Edit profile — name, location, client type, and 1–3 external platform links (`User.clientType`/`User.platforms`, the same fields collected once via the `/dashboard/new` gate and then reused/locked on every booking form), change password, delete account |
+| `/dashboard/messages` | Messages Inbox | List of every project thread with at least one message, with unread indicators, sorted by most recent activity; search bar + read-state/project-status filter dropdown |
 | `/dashboard/messages/:id` | Project Thread | Real-time chat (Socket.IO) with admin on one booking; full page normally, thread-panel partial only on `X-Requested-With: XMLHttpRequest` (SPA-style thread switching); composer disabled with an explanatory placeholder until `chatUnlocked` |
 | `POST /dashboard/messages/:id` | — | Send a chat message; up to 10 attachments and/or tagged existing project files per message; broadcasts `new-message` to the booking's socket room; 403s if the booking isn't `chatUnlocked` yet |
 | `GET /dashboard/messages/attachments/:filename` | — | Owning-client-only chat attachment download/view |
 | `POST /dashboard/messages/:id/:messageId/delete` | — | Soft-delete a message the client sent (clears body/attachments, tombstones the row); tagged project-file references are left untouched on disk |
+
+## Editor / Associate Portal (individual associate login required)
+
+Separate from both client accounts and the shared-password admin login — editors get individually-owned, bcrypt-hashed `Associate` accounts (`req.session.associateId`), created only by the superadmin via `/admin/associates`. An associate can only act on bookings currently `assignedTo` them (`requireAssignedBooking`, 403/redirect otherwise — archiving a booking also revokes an associate's access to it).
+
+| Route | Page | Purpose |
+|-------|------|---------|
+| `/associate/login` / `GET /associate/logout` | — | Individual editor login, rate-limited the same way as `/login`/`/admin/login` |
+| `/associate` | Associate Dashboard | "My projects" (assigned to this editor) + the unassigned pool available to self-claim |
+| `POST /associate/booking/:id/claim` | — | Atomic self-claim of an unassigned, non-archived booking (`findOneAndUpdate` on `assignedTo: null` — two editors racing the same booking can't both win) |
+| `/associate/booking/:id` | Booking Detail | Same shape as `admin/booking.ejs`, scoped to one assigned booking — status changes, deliverable upload/delete, deposit/final/revision Stripe invoices, delivery date, revision-reviewed toggle, chat (send/delete/mute) |
+| `/associate/messages` / `/associate/messages/archived` | Messages Inbox | List of this editor's assigned-project threads with at least one message; same search/filter/live-insert behavior as the admin and client inboxes |
+| `/associate/messages/:id` | Project Thread | Full-featured chat panel (lazy attachments, tagging, retry — same as admin/client), AJAX partial on `X-Requested-With` |
+| `GET /api/associate/messages/poll` | — | 15s poll for a live unread badge + new-message toasts, scoped to this associate's assigned bookings |
+| `GET /associate/messages/attachments/:filename` / `GET /associate/uploads/:filename` | — | Associate-only file serving, scoped to assigned bookings |
 
 ## Admin (restricted to owner)
 
@@ -48,8 +65,9 @@
 | `/admin/notifications` | Admin Notifications | Latest 200 `AdminNotification` records (`nudge`, `payment`, `new_booking`); marks all read on view; bell badge + 15s poll + toast on every other admin page via `_notif-poll.ejs` partial |
 | `GET /api/admin/notifications/poll` | — | Polling endpoint for live unread badge + new items since a timestamp (`?since=<ms>`) |
 | `POST /api/admin/notifications/mark-read` | — | Marks all admin notifications read (JSON response) |
-| `/admin` | Admin Dashboard | Active/Archived tab (`?view=archived`) bookings, server-side paginated (30/page) with debounced search (`q`/`field` query params) and status filter pills, total/pending counts |
-| `/admin/booking/:id` | Booking Detail | Full booking info, status picker, admin notes (disabled while archived), payment card (deposit due date, delivery date once paid), revision invoices card, media links, revision request list (mark reviewed) |
+| `/admin` | Admin Dashboard | Active/Completed/Archived tabs (`?view=completed`/`?view=archived`) bookings, server-side paginated (30/page) with debounced search (`q`/`field` query params) and a status filter dropdown (Active tab only), total count |
+| `/admin/booking/:id` | Booking Detail | Full booking info, status picker, admin notes (disabled while archived), payment card (deposit due date, delivery date once paid), revision invoices card, media links, revision request list (mark reviewed), assign/reassign to an `Associate` |
+| `POST /admin/booking/:id/assign` | — | Assign, reassign, or unassign (`associateId` empty) an active `Associate` to this booking — independent of an editor self-claiming it from `/associate` |
 | `POST /admin/booking/:id/status` | — | Update booking status + create client notification (special-cased message for `declined`); server-enforced status gate (`isStatusChangeAllowed`) — `completed`/`declined` are terminal, forward moves capped at one step, backward moves and `declined` always allowed, `paused` only from `in-progress` |
 | `POST /admin/booking/:id/notes` | — | Append an admin note (`adminNotes` array, admin-only, not client-visible) |
 | `POST /admin/booking/:id/notes/:noteId/edit` | — | Edit the text of an existing admin note |
@@ -66,7 +84,9 @@
 | `POST /admin/booking/:id/deliverables/:fileId/delete` | — | Remove a single deliverable file from disk and the booking record |
 | `GET /admin/uploads/:filename` | — | Protected file serving (checks active and `_archive` paths, and both `uploadedFiles`/`deliverableFiles`); images inline, video/audio in-browser, download for all |
 | `/admin/coupons` | Coupon Manager | List/create/toggle-active/delete coupon codes (percent or fixed discount, optional expiry) |
-| `/admin/messages` | Messages Inbox | List of every project thread (one row per booking with a linked client) with unread indicators |
+| `/admin/roles` | Role Manager | Create/toggle-active/delete `Role` postings shown on the public `/career` page |
+| `/admin/associates` | Associate Manager | Create editor accounts, toggle-active, reset password; no delete (`BookingRequest.assignedTo` can reference one — same reasoning as Coupons) |
+| `/admin/messages` | Messages Inbox | List of every project thread with at least one message, with unread indicators; search bar + read-state/project-status filter dropdown. Not linked from the admin sidebar (day-to-day client chat is now the assigned associate's job — see `/associate/messages` above) but still fully functional as a fallback; also reachable per-booking via `admin/booking.ejs`'s Quick Actions |
 | `/admin/messages/:id` | Project Thread | Real-time chat (Socket.IO) with the client on one booking; full page normally, thread-panel partial only on `X-Requested-With: XMLHttpRequest`; composer disabled until `chatUnlocked` |
 | `POST /admin/booking/:id/messages` | — | Send a chat message; up to 10 attachments and/or tagged existing project files (`uploadedFiles`/unlocked `deliverableFiles`) per message; 403s if the booking isn't `chatUnlocked` yet |
 | `GET /admin/messages/attachments/:filename` | — | Admin-only chat attachment download/view |
@@ -76,11 +96,13 @@
 
 ## Real-Time Messaging (Socket.IO)
 
-Chat is a separate system from the `/dashboard`/`/admin` in-app `Notification`/`AdminNotification` alert feeds — it lives entirely under its own `/messages` inbox pages (not embedded on `dashboard-booking.ejs`/`admin/booking.ejs`), backed by a `Message` model (one document per chat message). Socket.IO rooms are scoped per booking (`project:<bookingId>`), authorized once at connect (admin: booking exists; client: owns booking); sending itself still goes through a normal session-checked HTTP POST (multer needs a real request to parse attachments) — the socket only broadcasts the saved message (`new-message` event) to whoever has that thread open. Unread-message badges are piggybacked onto the existing 15s notification-poll endpoints (`/api/notifications/poll`, `/api/admin/notifications/poll`) via a `messageItems` array, rather than a separate polling channel or persisted `Notification` documents.
+Chat is a separate system from the `/dashboard`/`/admin` in-app `Notification`/`AdminNotification` alert feeds — it lives entirely under its own `/messages` inbox pages (`/dashboard/messages`, `/admin/messages`, and now `/associate/messages`; not embedded on `dashboard-booking.ejs`/`admin/booking.ejs`), backed by a `Message` model (one document per chat message). Socket.IO rooms are scoped per booking (`project:<bookingId>`), authorized once at connect (admin: booking exists; client: owns booking; associate: booking's `assignedTo` matches their session); sending itself still goes through a normal session-checked HTTP POST (multer needs a real request to parse attachments) — the socket only broadcasts the saved message (`new-message` event) to whoever has that thread open. Unread-message badges are piggybacked onto each portal's own 15s poll endpoint (`/api/notifications/poll` for clients, `/api/admin/notifications/poll` for admin, `/api/associate/messages/poll` for associates) via a `messageItems` array, rather than a separate polling channel or persisted `Notification` documents. The shared client-side driver (`views/_message-thread-script.ejs`) reads a `messagesBase`/`bookingBase` pair off the composer's `dataset` rather than hardcoding `/admin/` paths, so the same script works unmodified across all three portals; the associate portal uses the same full-featured thread panel admin/client get (`views/associate/_message-thread-panel-rich.ejs`) inside its dedicated inbox, but a smaller, fixed-height variant (`views/associate/_message-thread-panel.ejs`) when embedded on the booking-detail page. Admin's general inbox isn't linked from its own sidebar anymore — see the `/admin/messages` row above — since ongoing client chat is meant to be handled by whichever associate the project is assigned to.
 
 Chat is gated behind the `chatUnlocked` virtual on `BookingRequest` (`accepted`/`in-progress`/`completed`/`paused` — not `pending`/`in-review`/`declined`), enforced on both send routes (403 if locked) and reflected in both thread panels (disabled composer, explanatory placeholder) and both list views (locked-state row copy instead of "No messages yet.").
 
-Separately, `chatBlocked` is an admin-only mute on top of that gate — the client keeps read access to a thread but their send route 403s until an admin unblocks them (`chat-block`/`chat-unblock`, above). The client composer shows a persistent banner (not just a placeholder) when blocked, and the admin thread header shows a "Client blocked" badge + toggle button.
+Separately, `chatBlocked` is an admin-only mute on top of that gate — the client keeps read access to a thread but their send route 403s until an admin unblocks them (`chat-block`/`chat-unblock`, above). The client composer shows a persistent banner (not just a placeholder) when blocked, and the admin thread header shows a "Client blocked" badge + toggle button. The client's composer reconciles this state live off the `chatBlocked` flag riding along on every `new-message` socket event (there's no dedicated push for a mute toggle), rather than only reading it once at page load.
+
+A booking's first-ever message inserts a new row into both sidebars live (matching server-rendered markup) instead of requiring a reload — the inbox list only ever queries bookings with at least one `Message`, so a brand-new thread has no row to begin with.
 
 Attachments the receiving party hasn't fetched yet ("lazy" — image/video, not the sender's own, not already `downloaded`) show a tap-to-download icon instead of loading eagerly. If a booking's files have been permanently deleted (`filesDeleted`, see the client-delete route above), that lazy state is skipped entirely — every attachment (any type, tagged or not) renders straight into a non-interactive "This file is no longer available" placeholder, since a download would only ever fail. The same placeholder also covers the general case of an individual file that fails to load for any other reason (`onerror` on the `<img>`/`<video>`), including neutralizing the enclosing link so it doesn't still try to open a file viewer or download.
 

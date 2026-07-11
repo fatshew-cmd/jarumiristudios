@@ -1,7 +1,7 @@
 <!-- Simplified messaging panel for the associate portal — same send/receive/delete capability as
      the admin and client chat, without the lazy-thumbnail/progress-ring/tagged-file-picker UX
      those have (see views/_message-thread-script.ejs) — kept small and self-contained instead. -->
-<div class="card p-0! overflow-hidden flex flex-col" style="height: 520px;">
+<div class="card p-0! overflow-hidden flex flex-col <%= locals.fullHeight ? 'flex-1' : '' %>" <%= locals.fullHeight ? '' : 'style="height: 520px;"' %>>
   <div class="px-5 py-4 border-b border-white/5 shrink-0">
     <h2 class="text-base font-semibold text-white">Messages</h2>
     <p class="text-xs text-gray-500 mt-0.5"><%= booking.name %></p>

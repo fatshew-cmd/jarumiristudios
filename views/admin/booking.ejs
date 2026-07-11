@@ -48,39 +48,24 @@
 </head>
 <body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
 
-  <!-- Header -->
-  <header class="border-b border-white/5 bg-[#080808]/90 backdrop-blur-md sticky top-0 z-40">
-    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <a href="/admin" class="text-gray-500 hover:text-white transition-colors text-sm">← All requests</a>
-        <span class="text-white/10">|</span>
-        <span class="font-mono text-amber-400 text-sm font-semibold"><%= booking.crCode %></span>
-        <% if (booking.archived) { %>
-        <span class="status-badge" style="background:rgba(255,255,255,0.06);color:#9ca3af;border:1px solid rgba(255,255,255,0.12);">Archived</span>
-        <% } %>
-        <% if (booking.filesDeleted) { %>
-        <span class="status-badge" style="background:rgba(239,68,68,0.1);color:#f87171;border:1px solid rgba(239,68,68,0.2);">Files deleted by client</span>
-        <% } %>
-      </div>
-      <div class="flex items-center gap-5">
-        <a href="/admin/messages" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
-          Messages
-          <% if (locals.adminUnreadMessageCount > 0) { %>
-          <span style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;"><%= adminUnreadMessageCount %></span>
-          <% } %>
-        </a>
-        <a href="/admin/notifications" id="admin-notif-bell" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
-          Notifications
-          <% if (locals.adminUnreadCount > 0) { %>
-          <span id="admin-notif-count" style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;"><%= adminUnreadCount %></span>
-          <% } %>
-        </a>
-        <a href="/admin/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
-      </div>
-    </div>
-  </header>
+  <%- include('_sidebar', { active: 'dashboard' }) %>
+
+  <div class="lg:ml-55 min-h-screen">
+  <div class="lg:hidden h-14"></div>
 
   <main class="max-w-5xl mx-auto px-6 py-10 space-y-6">
+
+    <div class="flex items-center gap-4 mb-2">
+      <a href="/admin" class="text-gray-500 hover:text-white transition-colors text-sm">← All requests</a>
+      <span class="text-white/10">|</span>
+      <span class="font-mono text-amber-400 text-sm font-semibold"><%= booking.crCode %></span>
+      <% if (booking.archived) { %>
+      <span class="status-badge" style="background:rgba(255,255,255,0.06);color:#9ca3af;border:1px solid rgba(255,255,255,0.12);">Archived</span>
+      <% } %>
+      <% if (booking.filesDeleted) { %>
+      <span class="status-badge" style="background:rgba(239,68,68,0.1);color:#f87171;border:1px solid rgba(239,68,68,0.2);">Files deleted by client</span>
+      <% } %>
+    </div>
 
     <!-- Top row: status -->
     <div class="flex flex-col sm:flex-row sm:items-start gap-6">
@@ -747,9 +732,6 @@
               class="flex items-center gap-2.5 text-sm text-gray-400 hover:text-white transition-colors py-1">
               <iconify-icon icon="material-symbols-light:chat-outline" width="16" height="16"></iconify-icon>
               Messages
-              <% if (locals.bookingUnreadMessageCount > 0) { %>
-              <span style="display:flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:10px;font-weight:700;"><%= bookingUnreadMessageCount %></span>
-              <% } %>
             </a>
             <% } else if (booking.clientId) { %>
             <span title="Chat opens once this project is accepted."
@@ -792,6 +774,8 @@
     </div>
 
   </main>
+
+  </div>
 
   <!-- Accept + invoice modal (shown when clicking accepted with no invoice yet) -->
   <% if (booking.depositStatus === 'none') { %>

@@ -1508,11 +1508,9 @@ app.post("/dashboard/booking/:id/upload-files", requireClient, async (req, res, 
 // Inject unread admin notification count into all /admin views
 app.use("/admin", async (req, res, next) => {
   res.locals.adminUnreadCount = 0;
-  res.locals.adminUnreadMessageCount = 0;
   if (req.session.isAdmin) {
     try {
       res.locals.adminUnreadCount = await AdminNotification.countDocuments({ read: false });
-      res.locals.adminUnreadMessageCount = await Message.countDocuments({ senderRole: "client", read: false });
     } catch {}
   }
   next();
@@ -1552,22 +1550,13 @@ app.get("/admin/notifications", requireAdmin, async (req, res) => {
 
 app.get("/api/admin/notifications/poll", requireAdmin, async (req, res) => {
   const since = parseInt(req.query.since) || 0;
-  const [unreadCount, adminUnreadMessageCount, items, newMessages] = await Promise.all([
+  const [unreadCount, items] = await Promise.all([
     AdminNotification.countDocuments({ read: false }),
-    Message.countDocuments({ senderRole: "client", read: false }),
     since
       ? AdminNotification.find({ createdAt: { $gt: new Date(since) } }).sort({ createdAt: -1 }).lean()
       : [],
-    since
-      ? Message.find({ senderRole: "client", createdAt: { $gt: new Date(since) } }).sort({ createdAt: -1 }).lean()
-      : [],
   ]);
-  const messageItems = newMessages.map((m) => ({
-    bookingId: m.bookingId,
-    crCode: m.crCode,
-    preview: messagePreview(m.body, messageAttachments(m)),
-  }));
-  res.json({ unreadCount, adminUnreadMessageCount, items, messageItems, now: Date.now() });
+  res.json({ unreadCount, items, now: Date.now() });
 });
 
 app.post("/api/admin/notifications/mark-read", requireAdmin, async (req, res) => {
@@ -1588,10 +1577,15 @@ const ADMIN_SEARCH_FIELDS = {
 
 app.get("/admin", requireAdmin, async (req, res) => {
   const archivedView = req.query.view === "archived";
-  const filter = archivedView ? { archived: true } : { archived: { $ne: true } };
+  const completedView = req.query.view === "completed";
+  const filter = archivedView
+    ? { archived: true }
+    : completedView
+    ? { archived: { $ne: true }, status: "completed" }
+    : { archived: { $ne: true } };
 
   const statusParam = (req.query.status || "all").trim();
-  if (!archivedView && statusParam !== "all") {
+  if (!archivedView && !completedView && statusParam !== "all") {
     const statuses = statusParam.split(",").filter(Boolean);
     if (statuses.length) filter.status = { $in: statuses };
   }
@@ -1615,10 +1609,7 @@ app.get("/admin", requireAdmin, async (req, res) => {
     if (toDate) filter.createdAt.$lte = toDate;
   }
 
-  const [total, pending] = await Promise.all([
-    BookingRequest.countDocuments(filter),
-    BookingRequest.countDocuments({ archived: { $ne: true }, status: "pending" }),
-  ]);
+  const total = await BookingRequest.countDocuments(filter);
   const totalPages = Math.max(1, Math.ceil(total / ADMIN_PAGE_SIZE));
   const page = Math.min(Math.max(1, parseInt(req.query.page) || 1), totalPages);
 
@@ -1628,14 +1619,10 @@ app.get("/admin", requireAdmin, async (req, res) => {
     .limit(ADMIN_PAGE_SIZE)
     .populate("assignedTo", "name");
 
-  const unreadMessageBookingIds = new Set(
-    (await Message.find({ senderRole: "client", read: false }).distinct("bookingId")).map(String)
-  );
-
   const locals = {
-    bookings, total, pending, TIER_PRICES, ADDON_PRICES, archivedView,
+    bookings, total, TIER_PRICES, ADDON_PRICES, archivedView, completedView,
     page, totalPages, pageSize: ADMIN_PAGE_SIZE, q, field, statusParam, STATUS_LABELS,
-    dateFrom, dateTo, unreadMessageBookingIds,
+    dateFrom, dateTo,
   };
 
   if (req.xhr) {
@@ -1799,13 +1786,9 @@ app.get("/admin/analytics", requireAdmin, async (req, res) => {
 app.get("/admin/booking/:id", requireAdmin, async (req, res) => {
   const booking = await BookingRequest.findById(req.params.id);
   if (!booking) return res.redirect("/admin");
-  const bookingUnreadMessageCount = booking.clientId
-    ? await Message.countDocuments({ bookingId: booking._id, senderRole: "client", read: false })
-    : 0;
   const associates = await Associate.find({ active: true }).sort({ name: 1 });
   res.render("admin/booking", {
     booking,
-    bookingUnreadMessageCount,
     associates,
     statusGate: getStatusGate(booking.status),
     statusGateHints: STATUS_GATE_HINTS,
@@ -2609,6 +2592,19 @@ app.post("/admin/booking/:id/assign", requireAdmin, async (req, res) => {
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 
+// Inject unread client-message count into all /associate views (scoped to this associate's
+// own assigned, non-archived bookings — unlike the admin-wide count).
+app.use("/associate", async (req, res, next) => {
+  res.locals.associateUnreadMessageCount = 0;
+  if (req.session.associateId) {
+    try {
+      const bookingIds = await BookingRequest.find({ assignedTo: req.session.associateId, archived: { $ne: true } }).distinct("_id");
+      res.locals.associateUnreadMessageCount = await Message.countDocuments({ bookingId: { $in: bookingIds }, senderRole: "client", read: false });
+    } catch {}
+  }
+  next();
+});
+
 // ── Associate auth (separate from both the client account system and the shared-password
 // admin login — individual email+password accounts, created only via /admin/associates) ──
 app.get("/associate/login", (req, res) => {
@@ -2821,6 +2817,67 @@ app.post("/associate/booking/:id/send-revision-invoice", requireAssociate, requi
   res.redirect(`/associate/booking/${req.params.id}`);
 });
 
+async function associateMessageThreads(associateId, { archivedOnly = false } = {}) {
+  const bookings = await BookingRequest.find({ assignedTo: associateId, clientId: { $ne: null }, archived: archivedOnly ? true : { $ne: true } })
+    .select("crCode name serviceType status archived createdAt uploadedFiles.storedName uploadedFiles.mimetype")
+    .sort({ createdAt: -1 });
+  const threads = await Promise.all(bookings.map(async (booking) => {
+    const [lastMessage, unreadCount] = await Promise.all([
+      Message.findOne({ bookingId: booking._id }).sort({ createdAt: -1 }),
+      Message.countDocuments({ bookingId: booking._id, senderRole: "client", read: false }),
+    ]);
+    return { booking, lastMessage, unreadCount };
+  }));
+  // Only surface a thread once a conversation has actually started — starting one happens
+  // from the booking page itself, not from this inbox.
+  return threads.filter((t) => t.lastMessage);
+}
+
+app.get("/associate/messages", requireAssociate, async (req, res) => {
+  const threads = await associateMessageThreads(req.session.associateId, { archivedOnly: false });
+  res.render("associate/messages", { threads, archivedView: false });
+});
+
+app.get("/associate/messages/archived", requireAssociate, async (req, res) => {
+  const threads = await associateMessageThreads(req.session.associateId, { archivedOnly: true });
+  res.render("associate/messages", { threads, archivedView: true });
+});
+
+app.get("/associate/messages/:id", requireAssociate, async (req, res) => {
+  const booking = await BookingRequest.findOne({ _id: req.params.id, assignedTo: req.session.associateId });
+  if (!booking) return res.redirect("/associate/messages");
+  const messages = await Message.find({ bookingId: booking._id }).sort({ createdAt: 1 });
+  if (booking.clientId) await Message.updateMany({ bookingId: booking._id, senderRole: "client", read: false }, { read: true });
+
+  if (req.xhr) {
+    return res.render("associate/_message-thread-panel-rich", {
+      booking, messages, myRole: "admin",
+      attachmentBasePath: "/associate/messages/attachments",
+      postPath: `/associate/booking/${booking._id}/messages`,
+    });
+  }
+
+  const threads = await associateMessageThreads(req.session.associateId, { archivedOnly: !!booking.archived });
+  res.render("associate/messages", { threads, booking, messages, archivedView: !!booking.archived });
+});
+
+app.get("/api/associate/messages/poll", requireAssociate, async (req, res) => {
+  const since = parseInt(req.query.since) || 0;
+  const bookingIds = await BookingRequest.find({ assignedTo: req.session.associateId, archived: { $ne: true } }).distinct("_id");
+  const [associateUnreadMessageCount, newMessages] = await Promise.all([
+    Message.countDocuments({ bookingId: { $in: bookingIds }, senderRole: "client", read: false }),
+    since
+      ? Message.find({ bookingId: { $in: bookingIds }, senderRole: "client", createdAt: { $gt: new Date(since) } }).sort({ createdAt: -1 }).lean()
+      : [],
+  ]);
+  const messageItems = newMessages.map((m) => ({
+    bookingId: m.bookingId,
+    crCode: m.crCode,
+    preview: messagePreview(m.body, messageAttachments(m)),
+  }));
+  res.json({ associateUnreadMessageCount, messageItems, now: Date.now() });
+});
+
 app.post("/associate/booking/:id/messages", requireAssociate, requireAssignedBooking, (req, res, next) => {
   chatUpload.array("attachments", CHAT_MAX_ATTACHMENTS)(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });
@@ -2864,6 +2921,48 @@ app.post("/associate/booking/:id/messages/:messageId/delete", requireAssociate, 
   if (!message) return res.status(404).json({ error: "Message not found." });
   await softDeleteMessage(message);
   io.to(chatRoom(req.params.id)).emit("message-deleted", { messageId: message._id, bookingId: req.params.id });
+  res.json({ ok: true });
+});
+
+// Mutes the client on this project's chat — same as the admin toggle, scoped to the associate's
+// own assigned booking (see requireAssignedBooking).
+app.post("/associate/booking/:id/chat-block", requireAssociate, requireAssignedBooking, async (req, res) => {
+  req.booking.chatBlocked = true;
+  await req.booking.save();
+  res.json({ ok: true, chatBlocked: true });
+});
+
+app.post("/associate/booking/:id/chat-unblock", requireAssociate, requireAssignedBooking, async (req, res) => {
+  req.booking.chatBlocked = false;
+  await req.booking.save();
+  res.json({ ok: true, chatBlocked: false });
+});
+
+// Associate equivalent of the admin save-to-project route — promotes a chat-shared file into
+// the booking's official uploadedFiles, scoped to bookings assigned to this associate.
+app.post("/associate/messages/attachments/:filename/save-to-project", requireAssociate, async (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const message = await Message.findOne({ $or: [{ "attachments.storedName": filename }, { "attachment.storedName": filename }] });
+  if (!message) return res.sendStatus(404);
+  const att = messageAttachments(message).find((a) => a.storedName === filename);
+  if (!att) return res.sendStatus(404);
+  if (att.folder && att.folder !== "chat") return res.status(400).json({ error: "Already in project files." });
+
+  const booking = await BookingRequest.findOne({ _id: message.bookingId, assignedTo: req.session.associateId });
+  if (!booking) return res.sendStatus(404);
+  if (booking.archived) return res.status(403).json({ error: "This project is archived." });
+
+  const type = fileTypeFromMime(att.mimetype);
+  if (!moveStoredFile(message.crCode, "chat", type, filename, att)) {
+    return res.status(404).json({ error: "File not found on disk." });
+  }
+
+  booking.uploadedFiles.push({ originalName: att.originalName, storedName: att.storedName, size: att.size, mimetype: att.mimetype, blurDataUrl: att.blurDataUrl, storageKey: att.storageKey, backend: att.backend, folder: type });
+  await booking.save();
+
+  att.folder = type;
+  await message.save();
+
   res.json({ ok: true });
 });
 

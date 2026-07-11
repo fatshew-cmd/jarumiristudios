@@ -1,0 +1,64 @@
+<!-- Mobile top bar -->
+<header class="lg:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-[#0d0d0d] border-b border-white/5 flex items-center gap-2 px-4">
+  <button onclick="toggleSidebar()" class="h-12 w-12 flex items-center justify-center text-gray-500 hover:text-white transition-colors cursor-pointer">
+    <iconify-icon icon="material-symbols-light:menu" width="22" height="22"></iconify-icon>
+  </button>
+  <span class="brand text-[15px] font-bold text-white leading-none">Jarumiri Studios<span class="text-amber-400">.</span></span>
+  <span class="text-gray-600 font-normal text-xs">/ admin</span>
+</header>
+
+<div id="sidebar-overlay" class="lg:hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-30 hidden" onclick="toggleSidebar()"></div>
+
+<!-- Sidebar -->
+<aside id="sidebar" class="fixed top-0 left-0 h-screen w-55 bg-[#0d0d0d] border-r border-white/5 z-40 flex flex-col -translate-x-full lg:translate-x-0 transition-transform duration-200">
+  <div class="h-16.25 flex items-center px-5 border-b border-white/5 shrink-0">
+    <a href="/" class="brand text-[15px] font-bold text-white leading-none">
+      Jarumiri Studios<span class="text-amber-400">.</span>
+      <span class="block text-gray-600 font-normal text-xs mt-0.5">/ admin</span>
+    </a>
+  </div>
+
+  <nav class="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+    <a href="/admin" class="sidebar-link <%= locals.active === 'dashboard' ? 'active' : '' %>">
+      <iconify-icon icon="material-symbols-light:grid-view" width="20" height="20"></iconify-icon>
+      Dashboard
+    </a>
+    <a href="/admin/analytics" class="sidebar-link <%= locals.active === 'analytics' ? 'active' : '' %>">
+      <iconify-icon icon="material-symbols-light:monitoring" width="20" height="20"></iconify-icon>
+      Analytics
+    </a>
+    <a href="/admin/coupons" class="sidebar-link <%= locals.active === 'coupons' ? 'active' : '' %>">
+      <iconify-icon icon="material-symbols-light:sell" width="20" height="20"></iconify-icon>
+      Coupons
+    </a>
+    <a href="/admin/roles" class="sidebar-link <%= locals.active === 'roles' ? 'active' : '' %>">
+      <iconify-icon icon="material-symbols-light:shield-person" width="20" height="20"></iconify-icon>
+      Roles
+    </a>
+    <a href="/admin/associates" class="sidebar-link <%= locals.active === 'associates' ? 'active' : '' %>">
+      <iconify-icon icon="material-symbols-light:group" width="20" height="20"></iconify-icon>
+      Associates
+    </a>
+    <a href="/admin/notifications" id="admin-notif-bell" class="sidebar-link <%= locals.active === 'notifications' ? 'active' : '' %>">
+      <iconify-icon icon="material-symbols-light:notifications" width="20" height="20"></iconify-icon>
+      <span class="flex-1">Notifications</span>
+      <% if (locals.adminUnreadCount > 0) { %>
+      <span id="admin-notif-count" style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:10px;font-weight:700;"><%= adminUnreadCount %></span>
+      <% } %>
+    </a>
+  </nav>
+
+  <div class="px-3 pb-4 border-t border-white/5 shrink-0 pt-3">
+    <a href="/admin/logout" class="sidebar-link danger">
+      <iconify-icon icon="material-symbols-light:logout" width="20" height="20"></iconify-icon>
+      Sign out
+    </a>
+  </div>
+</aside>
+
+<script>
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('-translate-x-full');
+    document.getElementById('sidebar-overlay').classList.toggle('hidden');
+  }
+</script>

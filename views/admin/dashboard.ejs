@@ -51,55 +51,32 @@
 </head>
 <body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
 
-  <!-- Header -->
-  <header class="border-b border-white/5 bg-[#080808]/90 backdrop-blur-md sticky top-0 z-40">
-    <div class="max-w-350 mx-auto px-6 py-4 flex items-center justify-between">
-      <a href="/" class="brand text-lg font-bold tracking-tight">
-        <span class="text-white">Jarumiri</span> Studios<span class="text-amber-400">.</span>
-        <span class="text-gray-600 font-normal text-sm ml-2">/ admin</span>
-      </a>
-      <div class="flex items-center gap-6">
-        <div class="flex items-center gap-3 text-sm text-gray-500">
-          <span><%= pending %> pending</span>
-        </div>
-        <a href="/admin/analytics" class="text-sm text-gray-500 hover:text-white transition-colors">Analytics</a>
-        <a href="/admin/coupons" class="text-sm text-gray-500 hover:text-white transition-colors">Coupons</a>
-        <a href="/admin/roles" class="text-sm text-gray-500 hover:text-white transition-colors">Roles</a>
-        <a href="/admin/associates" class="text-sm text-gray-500 hover:text-white transition-colors">Associates</a>
-        <a href="/admin/messages" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
-          Messages
-          <% if (locals.adminUnreadMessageCount > 0) { %>
-          <span style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;"><%= adminUnreadMessageCount %></span>
-          <% } %>
+  <%- include('_sidebar', { active: 'dashboard' }) %>
+
+  <div class="lg:ml-55 min-h-screen">
+  <div class="lg:hidden h-14"></div>
+
+  <main class="px-6 lg:px-10 py-10">
+
+    <!-- Active / Completed / Archived tabs -->
+    <div class="flex items-center justify-between gap-4 mb-6 border-b border-white/8">
+      <div class="flex gap-1">
+        <a href="/admin"
+          class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors <%= (!archivedView && !completedView) ? 'text-white border-amber-400' : 'text-gray-500 border-transparent hover:text-gray-300' %>">
+          Active
         </a>
-        <a href="/admin/notifications" id="admin-notif-bell" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
-          Notifications
-          <% if (locals.adminUnreadCount > 0) { %>
-          <span id="admin-notif-count" style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;"><%= adminUnreadCount %></span>
-          <% } %>
+        <a href="/admin?view=completed"
+          class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors <%= completedView ? 'text-white border-amber-400' : 'text-gray-500 border-transparent hover:text-gray-300' %>">
+          Completed
         </a>
-        <a href="/admin/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
+        <a href="/admin?view=archived"
+          class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors <%= archivedView ? 'text-white border-amber-400' : 'text-gray-500 border-transparent hover:text-gray-300' %>">
+          Archived
+        </a>
       </div>
-    </div>
-  </header>
-
-  <main class="max-w-350 mx-auto px-6 py-10">
-
-    <!-- Title + filters -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4" id="filter-summary-region">
-      <%- include('_filter-summary') %>
-    </div>
-
-    <!-- Active / Archived tabs -->
-    <div class="flex gap-1 mb-6 border-b border-white/8">
-      <a href="/admin"
-        class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors <%= !archivedView ? 'text-white border-amber-400' : 'text-gray-500 border-transparent hover:text-gray-300' %>">
-        Active
-      </a>
-      <a href="/admin?view=archived"
-        class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors <%= archivedView ? 'text-white border-amber-400' : 'text-gray-500 border-transparent hover:text-gray-300' %>">
-        Archived
-      </a>
+      <div id="filter-summary-region" class="shrink-0 mb-2">
+        <%- include('_filter-summary') %>
+      </div>
     </div>
 
     <!-- Search bar -->
@@ -116,7 +93,6 @@
             { value: 'location',label: 'Location'    },
             { value: 'services',label: 'Services'    },
             { value: 'package', label: 'Package'     },
-            { value: 'status',  label: 'Status'      },
           ]; %>
           <span id="field-label"><%= (fieldOptions.find(o => o.value === field) || fieldOptions[0]).label %></span>
           <svg id="field-chevron" class="w-3.5 h-3.5 text-gray-500 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -165,6 +141,8 @@
     </div>
 
   </main>
+
+  </div>
 
   <script>
     // ── Search (live, fetched in place — no page reload) ──
@@ -382,14 +360,28 @@
       navigateSearch();
     }
 
+    function toggleStatusFilterDropdown() {
+      const menu = document.getElementById('status-filter-menu');
+      const chevron = document.getElementById('status-filter-chevron');
+      const open = !menu.classList.contains('hidden');
+      menu.classList.toggle('hidden', open);
+      chevron.style.transform = open ? '' : 'rotate(180deg)';
+    }
+
     document.addEventListener('click', e => {
       if (!document.getElementById('field-dropdown').contains(e.target)) {
         document.getElementById('field-menu').classList.add('hidden');
         document.getElementById('field-chevron').style.transform = '';
       }
-      if (!document.getElementById('bulk-status-dropdown').contains(e.target)) {
-        document.getElementById('bulk-status-menu').classList.add('hidden');
-        document.getElementById('bulk-status-chevron').style.transform = '';
+      if (!document.getElementById('bulk-status-dropdown')?.contains(e.target)) {
+        document.getElementById('bulk-status-menu')?.classList.add('hidden');
+        const bulkChevron = document.getElementById('bulk-status-chevron');
+        if (bulkChevron) bulkChevron.style.transform = '';
+      }
+      if (!document.getElementById('status-filter-dropdown')?.contains(e.target)) {
+        document.getElementById('status-filter-menu')?.classList.add('hidden');
+        const statusChevron = document.getElementById('status-filter-chevron');
+        if (statusChevron) statusChevron.style.transform = '';
       }
     });
   </script>

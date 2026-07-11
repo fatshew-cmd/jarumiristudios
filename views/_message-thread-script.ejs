@@ -569,8 +569,8 @@
   // load (the inbox only lists bookings that already have at least one message). The row always
   // corresponds to the thread currently open in this tab (sockets only join the mounted thread's
   // room), so it's marked active and pre-read.
-  function buildThreadRowHtml(bookingId, myRole, crCode, bookingName, statusBucket, thumbSrc, thumbIsVideo) {
-    var href = (myRole === 'admin' ? '/admin/messages/' : '/dashboard/messages/') + bookingId;
+  function buildThreadRowHtml(bookingId, myRole, crCode, bookingName, statusBucket, thumbSrc, thumbIsVideo, messagesBase) {
+    var href = (messagesBase || (myRole === 'admin' ? '/admin/messages/' : '/dashboard/messages/')) + bookingId;
     var nameHtml = myRole === 'admin'
       ? '<span class="text-gray-400 text-xs truncate">' + escapeHtml(bookingName || '') + '</span>'
       : '';
@@ -603,7 +603,8 @@
         composer ? composer.dataset.bookingName : '',
         composer ? composer.dataset.statusBucket : 'active',
         composer ? composer.dataset.thumbSrc : '',
-        composer ? composer.dataset.thumbIsVideo === 'true' : false);
+        composer ? composer.dataset.thumbIsVideo === 'true' : false,
+        composer ? composer.dataset.messagesBase : '');
       row = wrap.firstElementChild;
       emptyEl.classList.add('hidden');
       container.appendChild(row);
@@ -770,11 +771,13 @@
     }
   }
 
-  // Admin-only mute toggle — isCurrentlyBlocked is the state *before* the click, so we hit
-  // whichever endpoint flips it the other way.
+  // Mute toggle, available to whoever owns the thread (admin or the assigned associate) —
+  // isCurrentlyBlocked is the state *before* the click, so we hit whichever endpoint flips it.
   window.toggleChatBlock = function (bookingId, isCurrentlyBlocked) {
+    var composer = document.getElementById('composer');
+    var bookingBase = (composer && composer.dataset.bookingBase) || '/admin/booking/';
     var action = isCurrentlyBlocked ? 'chat-unblock' : 'chat-block';
-    fetch('/admin/booking/' + bookingId + '/' + action, { method: 'POST' }).then(function (res) {
+    fetch(bookingBase + bookingId + '/' + action, { method: 'POST' }).then(function (res) {
       if (res.ok) { location.reload(); return; }
       if (typeof showToast === 'function') showToast('Action failed', 'Please try again.', 'error');
     });

@@ -44,18 +44,18 @@
 </head>
 <body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
 
-  <header class="border-b border-white/5 bg-[#080808]/90 backdrop-blur-md sticky top-0 z-40">
-    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <a href="/associate" class="text-gray-500 hover:text-white transition-colors text-sm">← My projects</a>
-        <span class="text-white/10">|</span>
-        <span class="font-mono text-amber-400 text-sm font-semibold"><%= booking.crCode %></span>
-      </div>
-      <a href="/associate/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
-    </div>
-  </header>
+  <%- include('_sidebar', { active: 'dashboard' }) %>
+
+  <div class="lg:ml-55 min-h-screen">
+  <div class="lg:hidden h-14"></div>
 
   <main class="max-w-5xl mx-auto px-6 py-10 space-y-6">
+
+    <div class="flex items-center gap-4 mb-2">
+      <a href="/associate" class="text-gray-500 hover:text-white transition-colors text-sm">← My projects</a>
+      <span class="text-white/10">|</span>
+      <span class="font-mono text-amber-400 text-sm font-semibold"><%= booking.crCode %></span>
+    </div>
 
     <!-- Status picker -->
     <div class="flex flex-col sm:flex-row sm:items-start gap-6">
@@ -507,6 +507,8 @@
 
   </main>
 
+  </div>
+
   <script>
     const priceInput = document.querySelector('input[name="agreedPrice"]');
     const submitBtn  = priceInput ? priceInput.closest('form').querySelector('button[type="submit"]') : null;
@@ -518,6 +520,7 @@
   </script>
 
   <%- include('../_toast') %>
+  <%- include('_message-poll') %>
   <% if (locals.delivered) { %>
   <script>showToast('Files uploaded', '<%= delivered %> file<%= delivered === 1 ? "" : "s" %> uploaded.');</script>
   <% } %>

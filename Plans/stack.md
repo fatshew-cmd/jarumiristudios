@@ -15,8 +15,19 @@
 - `bcrypt` for password hashing
 - `express-session` for session management, backed by `connect-mongo` (`MongoStore`) instead of the default in-memory store — sessions survive server restarts/redeploys
 - No third-party auth providers
-- Two separate session flags: `req.session.isAdmin` (single shared password via `ADMIN_PASSWORD` env var, gates `/admin/*`) and `req.session.userId` (per-client `User` account, gates `/dashboard/*`)
+- Three separate session flags: `req.session.isAdmin` (single shared password via `ADMIN_PASSWORD` env var, gates `/admin/*`), `req.session.userId` (per-client `User` account, gates `/dashboard/*`), and `req.session.associateId` (per-editor `Associate` account, bcrypt-hashed individually, gates `/associate/*`) — associates are superadmin-created only (`/admin/associates`), never self-signup
 - Client accounts are optional — bookings can be submitted as a guest via `/hire` and tracked via `/track`; an account just links bookings to a persistent dashboard
+
+## Associate Portal (Editors)
+- Individual `Associate` accounts (name/email/password, `active` flag) sit alongside — not on top of — the client `User` model and the shared admin login, since the assignment/self-claim model needs to know *which* editor did what
+- `BookingRequest.assignedTo` (ref `Associate`) — either self-claimed by an editor from the unassigned pool on `/associate` (atomic `findOneAndUpdate` keyed on `assignedTo: null`, avoids two editors racing the same booking) or set/reassigned by the superadmin from `admin/booking.ejs`
+- `requireAssignedBooking` middleware scopes every `/associate/booking/:id/*` route to bookings currently assigned to that editor and not archived — an associate gets near-full parity with admin on their own assigned bookings (status changes, deliverables, Stripe invoices, chat) but no cross-project visibility and no archive/restore
+- Deposit/final/revision Stripe invoice creation lives in shared functions (`createDepositInvoice`/`reissueDepositInvoice`/`createFinalInvoice`/`reissueFinalInvoice`/`createRevisionInvoice`, `server.js`) called by both the admin and associate route handlers, instead of being duplicated per portal
+
+## Careers / Job Applications
+- `Role` model (title/description/requirements/active/order) drives the public `/career` page, replacing a pair of hardcoded homepage cards; managed via `/admin/roles`
+- `Application` model — own `appCode` (same random-code pattern as a booking's `crCode`), optional `roleId` + a snapshotted `roleTitle` (survives the role posting being closed/deleted later), optional file upload (200MB cap, video/audio/image/PDF/archive)
+- Rate-limited to 1 submission per rolling 24h per visitor cookie, unconditionally — unlike the booking-side guest quota, applicants have no account concept to key off instead
 
 ## Payments
 - **Stripe** (no monthly fee — % per transaction only)
@@ -43,8 +54,9 @@
 - Telegram handle is an optional fallback field for files too large for the 250MB upload limit
 
 ## Email
-- **Nodemailer** via Gmail SMTP (`PERSONAL_GMAIL` + app password)
-- Transactional emails: booking confirmation (client), new booking alert (admin), acceptance email (client, sent alongside the deposit invoice), invoice-sent alert (admin), payment-confirmed alert (admin), deposit-expired notice (client) + auto-decline alert (admin) from the deposit expiry job
+- **Resend** (HTTPS API, `lib/mailer.js`) — Railway blocks outbound raw SMTP, so Gmail SMTP via Nodemailer (the original choice) never actually delivered from production even after forcing IPv4 routing; Resend sidesteps the port block entirely. Domain `jarumiristudios.com` is verified on Resend so `MAIL_FROM` sends as an on-domain address.
+- All 14 templates share a branded table-based HTML layout (dark header, amber accents, pill buttons, code chips, detail tables) — table-based specifically for compatibility with email clients (Outlook etc.) that don't reliably support modern CSS layout in HTML mail.
+- Transactional emails: booking confirmation (client), new booking alert (admin), acceptance email (client, sent alongside the deposit invoice), invoice-sent alert (admin), payment-confirmed alert (admin), deposit-expired notice (client) + auto-decline alert (admin) from the deposit expiry job, password reset
 - Client "nudge admin" no longer sends an email (see In-app Notifications (Admin) below) — `sendAdminNudgeAlert` was removed from `lib/mailer.js`
 
 ## In-app Notifications (Client)

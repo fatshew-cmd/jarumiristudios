@@ -6,6 +6,7 @@
   <title>Analytics | Jarumiri Admin</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
   <link rel="stylesheet" href="/output.css" />
+  <script src="https://cdn.jsdelivr.net/npm/iconify-icon@2/dist/iconify-icon.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
@@ -86,31 +87,10 @@
 </head>
 <body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
 
-  <!-- Header -->
-  <header class="border-b border-white/5 bg-[#080808]/90 backdrop-blur-md sticky top-0 z-40">
-    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <a href="/admin" class="text-gray-500 hover:text-white transition-colors text-sm">← All requests</a>
-        <span class="text-white/10">|</span>
-        <span class="text-white text-sm font-semibold">Analytics</span>
-      </div>
-      <div class="flex items-center gap-5">
-        <a href="/admin/messages" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
-          Messages
-          <% if (locals.adminUnreadMessageCount > 0) { %>
-          <span style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;"><%= adminUnreadMessageCount %></span>
-          <% } %>
-        </a>
-        <a href="/admin/notifications" id="admin-notif-bell" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
-          Notifications
-          <% if (locals.adminUnreadCount > 0) { %>
-          <span id="admin-notif-count" style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;"><%= adminUnreadCount %></span>
-          <% } %>
-        </a>
-        <a href="/admin/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
-      </div>
-    </div>
-  </header>
+  <%- include('_sidebar', { active: 'analytics' }) %>
+
+  <div class="lg:ml-55 min-h-screen">
+  <div class="lg:hidden h-14"></div>
 
   <main class="max-w-6xl mx-auto px-6 py-10 space-y-8">
 
@@ -331,6 +311,8 @@
     </div>
 
   </main>
+
+  </div>
 
   <div id="chart-tooltip"><div class="tt-value"></div><div class="tt-label"></div></div>
 

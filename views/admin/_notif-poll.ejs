@@ -3,7 +3,6 @@
   var lastSeen = Date.now();
   var isNotifPage = window.location.pathname === '/admin/notifications';
   var isDashboardPage = window.location.pathname === '/admin';
-  var isMessagesPage = /^\/admin\/messages(\/|$)/.test(window.location.pathname);
 
   var ICONS = {
     nudge:       { icon: 'material-symbols-light:notifications-active', cls: 'nudge',       color: '#818cf8' },
@@ -29,22 +28,6 @@
         badge.id = 'admin-notif-count';
         badge.style.cssText = 'display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;';
         bell.appendChild(badge);
-      }
-      badge.textContent = count;
-    } else if (badge) {
-      badge.remove();
-    }
-  }
-
-  function updateMessagesBadge(count) {
-    var link = document.querySelector('a[href="/admin/messages"]');
-    if (!link) return;
-    var badge = link.querySelector('span');
-    if (count > 0) {
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.style.cssText = 'display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;';
-        link.appendChild(badge);
       }
       badge.textContent = count;
     } else if (badge) {
@@ -92,23 +75,6 @@
     });
   }
 
-  function handleNewMessages(messageItems) {
-    if (!messageItems.length) return;
-
-    var activeBookingMatch = location.pathname.match(/\/messages\/([a-f0-9]+)$/);
-    var activeBookingId = activeBookingMatch ? activeBookingMatch[1] : null;
-
-    var elsewhere = messageItems.filter(function (m) { return String(m.bookingId) !== activeBookingId; });
-
-    if (typeof showToast === 'function') {
-      elsewhere.forEach(function (m) {
-        showToast('New message', 'On ' + m.crCode + ': "' + m.preview + '"', 'info');
-      });
-    }
-
-    if (isMessagesPage && elsewhere.length) location.reload();
-  }
-
   async function poll() {
     try {
       var res = await fetch('/api/admin/notifications/poll?since=' + lastSeen);
@@ -117,9 +83,6 @@
       lastSeen = data.now;
 
       updateBadge(data.unreadCount);
-      updateMessagesBadge(data.adminUnreadMessageCount);
-
-      handleNewMessages(data.messageItems || []);
 
       if (!data.items.length) return;
 

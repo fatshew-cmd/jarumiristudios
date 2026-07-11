@@ -1,14 +1,14 @@
 <!-- Thread header -->
 <%
   const headerThumbFile = (booking.uploadedFiles || []).find(f => f.mimetype && /^(video|image)\//i.test(f.mimetype));
-  const headerThumbSrc = headerThumbFile ? '/admin/uploads/' + headerThumbFile.storedName : null;
+  const headerThumbSrc = headerThumbFile ? '/associate/uploads/' + headerThumbFile.storedName : null;
   const headerThumbIsVideo = /^video\//i.test((headerThumbFile || {}).mimetype || '');
 %>
 <div class="flex items-center gap-3 px-5 py-4 border-b border-white/5 shrink-0">
   <button type="button" onclick="showList()" class="lg:hidden text-gray-500 hover:text-white transition-colors shrink-0">
     <iconify-icon icon="material-symbols-light:chevron-left" width="24" height="24"></iconify-icon>
   </button>
-  <a href="/admin/booking/<%= booking._id %>" class="flex items-center gap-3 min-w-0 hover:opacity-80 transition-opacity">
+  <a href="/associate/booking/<%= booking._id %>" class="flex items-center gap-3 min-w-0 hover:opacity-80 transition-opacity">
     <div class="thread-icon shrink-0" style="width: 2.5rem; height: 2.5rem;">
       <% if (headerThumbSrc && headerThumbIsVideo) { %>
       <video src="<%= headerThumbSrc %>" muted preload="metadata" onerror="handleThreadThumbError(this)"></video>
@@ -31,12 +31,14 @@
   <% if (booking.chatBlocked) { %>
   <span class="px-2 py-0.5 rounded-md bg-red-500/10 border border-red-500/25 text-red-400 text-[11px] font-semibold">Client blocked</span>
   <% } %>
+  <% if (!booking.archived) { %>
   <button type="button" onclick="window.toggleChatBlock('<%= booking._id %>', <%= booking.chatBlocked ? 'true' : 'false' %>)"
     class="ml-auto shrink-0 flex items-center gap-1 text-xs transition-colors <%= booking.chatBlocked ? 'text-red-400 hover:text-red-300' : 'text-gray-500 hover:text-white' %>"
     title="<%= booking.chatBlocked ? 'Unblock this client' : 'Block this client from sending messages' %>">
     <iconify-icon icon="material-symbols-light:block" width="15" height="15"></iconify-icon>
     <%= booking.chatBlocked ? 'Unblock' : 'Block' %>
   </button>
+  <% } %>
 </div>
 
 <!-- Message list -->
@@ -230,10 +232,10 @@
       <%
         const mediaGroups = [];
         if (booking.uploadedFiles && booking.uploadedFiles.length) {
-          mediaGroups.push({ label: 'Uploaded files', source: 'uploaded', base: '/admin/uploads', files: booking.uploadedFiles });
+          mediaGroups.push({ label: 'Uploaded files', source: 'uploaded', base: '/associate/uploads', files: booking.uploadedFiles });
         }
         if (booking.deliverableFiles && booking.deliverableFiles.length) {
-          mediaGroups.push({ label: 'Final deliverables', source: 'deliverable', base: '/admin/uploads', files: booking.deliverableFiles });
+          mediaGroups.push({ label: 'Final deliverables', source: 'deliverable', base: '/associate/uploads', files: booking.deliverableFiles });
         }
       %>
       <% if (!mediaGroups.length) { %>
@@ -286,7 +288,7 @@
 <%
   const viewerFiles = (booking.uploadedFiles || []).map(f => ({
     storedName: f.storedName, originalName: f.originalName, mimetype: f.mimetype, size: f.size,
-    url: '/admin/uploads/' + f.storedName,
+    url: '/associate/uploads/' + f.storedName,
   }));
 %>
 <div id="file-viewer-modal" class="hidden fixed inset-0 z-50 items-center justify-center p-6" style="background:rgba(0,0,0,0.88);backdrop-filter:blur(6px);"
@@ -313,16 +315,18 @@
 </div>
 
 <!-- Composer -->
-<% const composerLocked = !booking.chatUnlocked || booking.chatBlocked; %>
-<% const composerPlaceholder = !booking.chatUnlocked
+<% const composerLocked = booking.archived || !booking.chatUnlocked || booking.chatBlocked; %>
+<% const composerPlaceholder = booking.archived
+     ? "This project is archived."
+     : !booking.chatUnlocked
      ? "This project hasn't been accepted yet."
      : booking.chatBlocked ? "Unblock this client to send a message." : 'Reply to client...'; %>
-<% if (booking.chatBlocked) { %>
+<% if (booking.chatBlocked && !booking.archived) { %>
 <div class="px-5 py-2.5 border-t border-white/5 bg-red-500/5 text-xs text-red-400 text-center shrink-0">
   This project's recipient is currently blocked. Unblock first to send messages.
 </div>
 <% } %>
-<form id="composer" class="flex flex-col gap-2 px-5 pt-4 border-t border-white/5 shrink-0" style="padding-bottom: max(1rem, env(safe-area-inset-bottom))" enctype="multipart/form-data" data-post-path="<%= postPath %>" data-attachment-base="<%= attachmentBasePath %>" data-my-role="<%= myRole %>" data-booking-name="<%= booking.name %>" data-status-bucket="<%= booking.status === 'completed' ? 'completed' : 'active' %>" data-thumb-src="<%= headerThumbSrc || '' %>" data-thumb-is-video="<%= headerThumbIsVideo ? 'true' : 'false' %>" data-messages-base="/admin/messages/" data-booking-base="/admin/booking/">
+<form id="composer" class="flex flex-col gap-2 px-5 pt-4 border-t border-white/5 shrink-0" style="padding-bottom: max(1rem, env(safe-area-inset-bottom))" enctype="multipart/form-data" data-post-path="<%= postPath %>" data-attachment-base="<%= attachmentBasePath %>" data-my-role="<%= myRole %>" data-booking-name="<%= booking.name %>" data-status-bucket="<%= booking.status === 'completed' ? 'completed' : 'active' %>" data-thumb-src="<%= headerThumbSrc || '' %>" data-thumb-is-video="<%= headerThumbIsVideo ? 'true' : 'false' %>" data-messages-base="/associate/messages/" data-booking-base="/associate/booking/">
   <div id="attachment-preview-list" class="hidden flex-wrap gap-2"></div>
   <div class="flex items-end gap-2">
     <button type="button" id="attach-btn" <%= composerLocked ? 'disabled' : '' %>

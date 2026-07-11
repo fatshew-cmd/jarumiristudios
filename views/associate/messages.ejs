@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title><%= typeof booking !== 'undefined' && booking ? booking.crCode + ' · ' : '' %>Messages | Jarumiri Admin</title>
+  <title><%= typeof booking !== 'undefined' && booking ? booking.crCode + ' · ' : '' %>Messages | Associate Portal</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
   <link rel="stylesheet" href="/output.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -263,12 +263,12 @@
         const lastAtts = (t.lastMessage.attachments && t.lastMessage.attachments.length) ? t.lastMessage.attachments : (t.lastMessage.attachment && t.lastMessage.attachment.storedName ? [t.lastMessage.attachment] : []);
         const lastMediaAtt = lastAtts.find(a => a.mimetype && /^(video|image)\//i.test(a.mimetype));
         const projectThumbFile = (t.booking.uploadedFiles || []).find(f => f.mimetype && /^(video|image)\//i.test(f.mimetype));
-        const thumbSrc = lastMediaAtt ? '/admin/messages/attachments/' + lastMediaAtt.storedName
-          : projectThumbFile ? '/admin/uploads/' + projectThumbFile.storedName
+        const thumbSrc = lastMediaAtt ? '/associate/messages/attachments/' + lastMediaAtt.storedName
+          : projectThumbFile ? '/associate/uploads/' + projectThumbFile.storedName
           : null;
         const thumbIsVideo = /^video\//i.test((lastMediaAtt || projectThumbFile || {}).mimetype || '');
       %>
-      <a href="/admin/messages/<%= t.booking._id %>" class="thread-row <%= isActive ? 'active' : '' %>" data-booking-id="<%= t.booking._id %>" data-status="<%= statusBucket %>" data-unread="<%= t.unreadCount %>">
+      <a href="/associate/messages/<%= t.booking._id %>" class="thread-row <%= isActive ? 'active' : '' %>" data-booking-id="<%= t.booking._id %>" data-status="<%= statusBucket %>" data-unread="<%= t.unreadCount %>">
         <div class="thread-icon">
           <% if (thumbSrc && thumbIsVideo) { %>
           <video src="<%= thumbSrc %>" muted preload="metadata" class="thread-thumb-video" onerror="handleThreadThumbError(this)"></video>
@@ -301,12 +301,12 @@
       <!-- Archived / active toggle -->
       <div class="p-3 border-t border-white/5 shrink-0">
         <% if (locals.archivedView) { %>
-        <a href="/admin/messages" class="flex items-center justify-center gap-2 h-10 rounded-md bg-white/5 border border-white/10 text-sm text-gray-300 hover:text-white hover:border-white/25 transition-colors">
+        <a href="/associate/messages" class="flex items-center justify-center gap-2 h-10 rounded-md bg-white/5 border border-white/10 text-sm text-gray-300 hover:text-white hover:border-white/25 transition-colors">
           <iconify-icon icon="material-symbols-light:arrow-back" width="16" height="16"></iconify-icon>
           Back to active
         </a>
         <% } else { %>
-        <a href="/admin/messages/archived" class="flex items-center justify-center gap-2 h-10 rounded-md bg-white/5 border border-white/10 text-sm text-gray-300 hover:text-white hover:border-white/25 transition-colors">
+        <a href="/associate/messages/archived" class="flex items-center justify-center gap-2 h-10 rounded-md bg-white/5 border border-white/10 text-sm text-gray-300 hover:text-white hover:border-white/25 transition-colors">
           <iconify-icon icon="material-symbols-light:archive-outline" width="16" height="16"></iconify-icon>
           Archived Projects
         </a>
@@ -317,7 +317,7 @@
     <!-- Thread panel -->
     <div id="thread-panel" class="thread-panel-col">
       <% if (typeof booking !== 'undefined' && booking) { %>
-      <%- include('_message-thread-panel', { booking, messages, myRole: 'admin', attachmentBasePath: '/admin/messages/attachments', postPath: '/admin/booking/' + booking._id + '/messages' }) %>
+      <%- include('_message-thread-panel-rich', { booking, messages, myRole: 'admin', attachmentBasePath: '/associate/messages/attachments', postPath: '/associate/booking/' + booking._id + '/messages' }) %>
       <% } else { %>
       <div class="flex-1 flex items-center justify-center text-center px-6">
         <div>
@@ -398,6 +398,6 @@
   <%- include('../_message-thread-script', { booking: typeof booking !== 'undefined' ? booking : null }) %>
   <%- include('../_toast') %>
   <%- include('../_confirm-modal') %>
-  <%- include('_notif-poll') %>
+  <%- include('_message-poll') %>
 </body>
 </html>
