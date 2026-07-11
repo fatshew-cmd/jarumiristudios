@@ -18,7 +18,8 @@
 
     .messenger { display: flex; height: calc(100vh - 65px); }
 
-    .chat-list-col { width: 320px; flex-shrink: 0; border-right: 1px solid rgba(255,255,255,0.05); overflow-y: auto; }
+    .chat-list-col { width: 380px; flex-shrink: 0; border-right: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; overflow: hidden; }
+    .thread-list-scroll { flex: 1; overflow-y: auto; }
     .thread-panel-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
     @media (max-width: 1023px) {
       .messenger.thread-active .chat-list-col { display: none; }
@@ -35,10 +36,12 @@
     .thread-row:hover { background: rgba(255,255,255,0.03); }
     .thread-row.active { background: rgba(245,158,11,0.06); }
     .thread-icon {
-      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
       background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.2);
       display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
     }
+    .thread-icon img, .thread-icon video { width: 100%; height: 100%; object-fit: cover; }
     .unread-badge {
       display: flex; align-items: center; justify-content: center;
       min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9999px;
@@ -225,14 +228,14 @@
     <!-- Chat list column -->
     <div class="chat-list-col">
       <!-- Search + filter -->
-      <div class="flex items-center gap-2 p-4 border-b border-white/5">
+      <div class="flex items-center gap-2 p-3 border-b border-white/5">
         <div class="relative flex-1 min-w-0">
           <iconify-icon icon="material-symbols-light:search" width="18" height="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"></iconify-icon>
           <input type="text" id="thread-search" placeholder="Search conversations…"
-            class="w-full h-11 pl-9 pr-3 rounded-md bg-white/5 border border-white/10 text-sm text-white placeholder-gray-500 outline-none focus:border-amber-400/40 transition-colors" />
+            class="w-full h-9 pl-9 pr-3 rounded-md bg-white/5 border border-white/10 text-sm text-white placeholder-gray-500 outline-none focus:border-amber-400/40 transition-colors" />
         </div>
         <div class="relative shrink-0">
-          <button type="button" id="thread-filter-btn" class="h-11 w-11 flex items-center justify-center rounded-md bg-white/5 border border-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer">
+          <button type="button" id="thread-filter-btn" class="h-9 w-9 flex items-center justify-center rounded-md bg-white/5 border border-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer">
             <iconify-icon icon="material-symbols-light:filter-list" width="18" height="18"></iconify-icon>
           </button>
           <div id="thread-filter-menu" class="hidden absolute right-0 top-full mt-1 w-48 rounded-md bg-[#131313] border border-white/10 shadow-xl z-20 py-1">
@@ -244,27 +247,40 @@
             <button type="button" class="thread-filter-opt active w-full text-left px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5 cursor-pointer" data-filter-type="status" data-filter-value="all">All</button>
             <button type="button" class="thread-filter-opt w-full text-left px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5 cursor-pointer" data-filter-type="status" data-filter-value="active">Active</button>
             <button type="button" class="thread-filter-opt w-full text-left px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5 cursor-pointer" data-filter-type="status" data-filter-value="completed">Completed</button>
-            <button type="button" class="thread-filter-opt w-full text-left px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5 cursor-pointer" data-filter-type="status" data-filter-value="archived">Archived</button>
           </div>
         </div>
       </div>
 
+      <div class="thread-list-scroll">
       <div id="thread-list-empty" class="text-center py-16 px-4 <%= (threads && threads.length) ? 'hidden' : '' %>">
         <div class="w-11 h-11 rounded-md bg-white/3 border border-white/8 flex items-center justify-center mx-auto mb-4">
           <iconify-icon icon="material-symbols-light:chat" width="22" height="22" class="text-gray-700"></iconify-icon>
         </div>
-        <p class="text-gray-600 text-sm">No client conversations yet.</p>
+        <p class="text-gray-600 text-sm"><%= locals.archivedView ? 'No archived conversations.' : 'No client conversations yet.' %></p>
       </div>
       <div id="thread-list-no-match" class="hidden text-center py-16 px-4">
         <p class="text-gray-600 text-sm">No conversations match your search.</p>
       </div>
       <% (threads || []).forEach(t => {
         const isActive = typeof booking !== 'undefined' && booking && String(booking._id) === String(t.booking._id);
-        const statusBucket = t.booking.archived ? 'archived' : (t.booking.status === 'completed' ? 'completed' : 'active');
+        const statusBucket = t.booking.status === 'completed' ? 'completed' : 'active';
+        const lastAtts = (t.lastMessage.attachments && t.lastMessage.attachments.length) ? t.lastMessage.attachments : (t.lastMessage.attachment && t.lastMessage.attachment.storedName ? [t.lastMessage.attachment] : []);
+        const lastMediaAtt = lastAtts.find(a => a.mimetype && /^(video|image)\//i.test(a.mimetype));
+        const projectThumbFile = (t.booking.uploadedFiles || []).find(f => f.mimetype && /^(video|image)\//i.test(f.mimetype));
+        const thumbSrc = lastMediaAtt ? '/admin/messages/attachments/' + lastMediaAtt.storedName
+          : projectThumbFile ? '/admin/uploads/' + projectThumbFile.storedName
+          : null;
+        const thumbIsVideo = /^video\//i.test((lastMediaAtt || projectThumbFile || {}).mimetype || '');
       %>
       <a href="/admin/messages/<%= t.booking._id %>" class="thread-row <%= isActive ? 'active' : '' %>" data-booking-id="<%= t.booking._id %>" data-status="<%= statusBucket %>" data-unread="<%= t.unreadCount %>">
         <div class="thread-icon">
+          <% if (thumbSrc && thumbIsVideo) { %>
+          <video src="<%= thumbSrc %>" muted preload="metadata" class="thread-thumb-video" onerror="handleThreadThumbError(this)"></video>
+          <% } else if (thumbSrc) { %>
+          <img src="<%= thumbSrc %>" alt="" onerror="handleThreadThumbError(this)" />
+          <% } else { %>
           <iconify-icon icon="material-symbols-light:chat" width="15" height="15" style="color:#f59e0b"></iconify-icon>
+          <% } %>
         </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">
@@ -273,7 +289,7 @@
           </div>
           <p class="text-sm text-gray-300 mt-0.5 truncate">
             <%
-              const atts = (t.lastMessage.attachments && t.lastMessage.attachments.length) ? t.lastMessage.attachments : (t.lastMessage.attachment && t.lastMessage.attachment.storedName ? [t.lastMessage.attachment] : []);
+              const atts = lastAtts;
               const attsLabel = atts.length ? '📎 ' + (atts.length === 1 ? atts[0].originalName : atts.length + ' files') : '';
             %>
             <%= t.lastMessage.senderRole === 'admin' ? 'You: ' : '' %><%= t.lastMessage.deleted ? 'This message was deleted' : (t.lastMessage.body || attsLabel) %>
@@ -284,6 +300,22 @@
         <% } %>
       </a>
       <% }) %>
+      </div>
+
+      <!-- Archived / active toggle -->
+      <div class="p-3 border-t border-white/5 shrink-0">
+        <% if (locals.archivedView) { %>
+        <a href="/admin/messages" class="flex items-center justify-center gap-2 h-10 rounded-md bg-white/5 border border-white/10 text-sm text-gray-300 hover:text-white hover:border-white/25 transition-colors">
+          <iconify-icon icon="material-symbols-light:arrow-back" width="16" height="16"></iconify-icon>
+          Back to active
+        </a>
+        <% } else { %>
+        <a href="/admin/messages/archived" class="flex items-center justify-center gap-2 h-10 rounded-md bg-white/5 border border-white/10 text-sm text-gray-300 hover:text-white hover:border-white/25 transition-colors">
+          <iconify-icon icon="material-symbols-light:archive-outline" width="16" height="16"></iconify-icon>
+          Archived Projects
+        </a>
+        <% } %>
+      </div>
     </div>
 
     <!-- Thread panel -->
@@ -304,15 +336,27 @@
   </div>
 
   <script>
+    document.querySelectorAll('video.thread-thumb-video').forEach(v => {
+      const seek = () => { if (v.currentTime === 0) v.currentTime = 0.1; };
+      if (v.readyState >= 2) seek();
+      else v.addEventListener('loadeddata', seek, { once: true });
+    });
+
+    function handleThreadThumbError(el) {
+      el.outerHTML = '<iconify-icon icon="material-symbols-light:chat" width="15" height="15" style="color:#f59e0b"></iconify-icon>';
+    }
+
     (function () {
       const searchInput = document.getElementById('thread-search');
       const filterBtn = document.getElementById('thread-filter-btn');
       const filterMenu = document.getElementById('thread-filter-menu');
       const noMatchEl = document.getElementById('thread-list-no-match');
-      const rows = Array.from(document.querySelectorAll('.thread-row'));
       const filters = { read: 'all', status: 'all' };
 
+      // Re-queried on every call (not cached) so rows created later — e.g. a booking's first-ever
+      // message inserting a fresh row live, see _message-thread-script.ejs — get filtered too.
       function applyFilters() {
+        const rows = Array.from(document.querySelectorAll('.thread-row'));
         const q = (searchInput?.value || '').trim().toLowerCase();
         let visibleCount = 0;
         rows.forEach((row) => {
@@ -325,6 +369,7 @@
         });
         if (noMatchEl) noMatchEl.classList.toggle('hidden', visibleCount > 0 || rows.length === 0);
       }
+      window.applyThreadFilters = applyFilters;
 
       searchInput?.addEventListener('input', applyFilters);
 

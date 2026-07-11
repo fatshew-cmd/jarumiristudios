@@ -201,7 +201,6 @@
         </div>
 
         <form id="gate-form" action="/dashboard/account/profile?next=/dashboard/new" method="POST" novalidate class="space-y-4">
-          <input type="hidden" name="platformsSubmitted" value="1" />
           <div>
             <label class="form-label" for="profile-name">Full name <span class="text-amber-400">*</span></label>
             <input class="form-input" type="text" id="profile-name" name="name" placeholder="Your name" autocomplete="name" value="<%= user.name || '' %>" required />

@@ -284,11 +284,11 @@
      ? 'Chat opens once this project is accepted.'
      : booking.chatBlocked ? "You've been restricted from sending messages." : 'Write a message...'; %>
 <% if (booking.chatBlocked) { %>
-<div class="px-5 py-2.5 border-t border-white/5 bg-red-500/5 text-xs text-red-400 text-center shrink-0">
+<div id="chat-blocked-banner" class="px-5 py-2.5 border-t border-white/5 bg-red-500/5 text-xs text-red-400 text-center shrink-0">
   You've been restricted from sending messages on this project.
 </div>
 <% } %>
-<form id="composer" class="flex flex-col gap-2 px-5 py-4 border-t border-white/5 shrink-0" enctype="multipart/form-data" data-post-path="<%= postPath %>" data-attachment-base="<%= attachmentBasePath %>" data-my-role="<%= myRole %>">
+<form id="composer" class="flex flex-col gap-2 px-5 py-4 border-t border-white/5 shrink-0" enctype="multipart/form-data" data-post-path="<%= postPath %>" data-attachment-base="<%= attachmentBasePath %>" data-my-role="<%= myRole %>" data-chat-unlocked="<%= booking.chatUnlocked ? 'true' : 'false' %>" data-chat-blocked="<%= booking.chatBlocked ? 'true' : 'false' %>" data-status-bucket="<%= booking.status === 'completed' ? 'completed' : 'active' %>">
   <div id="attachment-preview-list" class="hidden flex-wrap gap-2"></div>
   <div class="flex items-end gap-2">
     <button type="button" id="attach-btn" <%= composerLocked ? 'disabled' : '' %>
@@ -299,9 +299,11 @@
     <textarea id="body-input" rows="1" placeholder="<%= composerPlaceholder %>" <%= composerLocked ? 'disabled' : '' %>
       class="flex-1 h-12 bg-white/4 border border-white/10 rounded-md px-4 py-2.5 text-sm text-white outline-none resize-none disabled:opacity-40 disabled:cursor-not-allowed"
       style="max-height:120px;"></textarea>
-    <button type="submit" <%= composerLocked ? 'disabled' : '' %>
-      class="h-12 bg-amber-400 text-black text-sm font-bold px-4 py-2.5 rounded-md hover:bg-amber-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-400">
-      Send
-    </button>
+    <span class="shrink-0<%= composerLocked ? ' cursor-not-allowed' : '' %>">
+      <button type="submit" <%= composerLocked ? 'disabled' : '' %>
+        class="h-12 bg-amber-400 text-black text-sm font-bold px-4 py-2.5 rounded-md hover:bg-amber-300 transition-colors disabled:opacity-40 disabled:pointer-events-none disabled:hover:bg-amber-400">
+        Send
+      </button>
+    </span>
   </div>
 </form>

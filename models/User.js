@@ -12,7 +12,6 @@ const userSchema = new mongoose.Schema(
       default: "",
       enum: ["", "Independent Creator", "Agency", "Studio", "Brand / Business", "Other"],
     },
-    externalLink:   { type: String, default: "" },
     platforms: {
       type: [{
         platform: { type: String, enum: ["Instagram", "Twitter", "TikTok", "OnlyFans", "Fansly", "Fanview", "MannyVids", "Pornhub", "Other"], required: true },

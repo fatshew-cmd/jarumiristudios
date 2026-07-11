@@ -1,6 +1,14 @@
 @import "tailwindcss";
 @source "../views/**/*.ejs";
 
+/* Browsers don't default <button> to a pointer cursor the way links get one — apply it
+   site-wide instead of adding cursor-pointer to every button by hand. Utility classes
+   (e.g. disabled:cursor-not-allowed) still win since the utilities layer outranks base. */
+@layer base {
+  button:not(:disabled), [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}
 
 @theme {
     --color-orange-50: #fffbeb;

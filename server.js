@@ -1147,33 +1147,23 @@ app.get("/dashboard/account", requireClient, async (req, res) => {
 });
 
 app.post("/dashboard/account/profile", requireClient, async (req, res) => {
-  const { name, location, clientType, externalLink } = req.body;
+  const { name, location, clientType } = req.body;
   if (!name?.trim() || !location?.trim()) {
     const user = await User.findById(req.session.userId);
     return res.render("dashboard-account", { user, error: "Name and location are required.", success: null });
   }
-  const rawLink = (externalLink || "").trim();
-  const safeLink = rawLink && !rawLink.match(/^https?:\/\//) ? "https://" + rawLink : rawLink;
 
+  const platformNames   = [].concat(req.body.platformNames   || []);
+  const platformHandles = [].concat(req.body.platformHandles || []);
   const update = {
     name: name.trim(),
     location: location.trim(),
     clientType: (clientType || "").trim(),
-    externalLink: safeLink,
-  };
-
-  // The Profile section and the External links section are separate forms on the same
-  // page (and the profile-completion gate on /dashboard/new combines both) — only touch
-  // platforms when the submitting form actually included the links widget, so saving one
-  // section never silently wipes the other.
-  if (req.body.platformsSubmitted !== undefined) {
-    const platformNames   = [].concat(req.body.platformNames   || []);
-    const platformHandles = [].concat(req.body.platformHandles || []);
-    update.platforms = platformNames
+    platforms: platformNames
       .map((platform, i) => ({ platform, handle: (platformHandles[i] || "").trim() }))
       .filter((p) => p.platform && p.handle)
-      .slice(0, MAX_PLATFORM_LINKS);
-  }
+      .slice(0, MAX_PLATFORM_LINKS),
+  };
 
   await User.findByIdAndUpdate(req.session.userId, update);
   const redirectTo = req.query.next || "/dashboard/account";
@@ -1672,11 +1662,12 @@ app.get("/admin/booking/:id", requireAdmin, async (req, res) => {
 });
 
 app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => {
-  const booking = await BookingRequest.findById(req.params.id).select("crCode archived clientId uploadedFiles deliverableFiles status");
+  const booking = await BookingRequest.findById(req.params.id).select("crCode archived clientId uploadedFiles deliverableFiles status chatBlocked");
   if (!booking) return res.status(404).json({ error: "Project not found." });
   if (booking.archived) return res.status(403).json({ error: "This project is archived." });
   if (!booking.clientId) return res.status(400).json({ error: "This project has no linked client account." });
   if (!booking.chatUnlocked) return res.status(403).json({ error: "This project hasn't been accepted yet." });
+  if (booking.chatBlocked) return res.status(403).json({ error: "Unblock this client to send a message." });
   req.crCode = booking.crCode;
   req.booking = booking;
   next();
@@ -1708,7 +1699,11 @@ app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => 
     attachments,
   });
 
-  io.to(chatRoom(req.params.id)).emit("new-message", message);
+  // chatBlocked rides along so the client's page can reconcile its composer lock state against
+  // the current mute status on every message, instead of only at page load (see _message-thread-script.ejs).
+  const payload = message.toObject();
+  payload.chatBlocked = req.booking.chatBlocked;
+  io.to(chatRoom(req.params.id)).emit("new-message", payload);
   res.json({ message });
 });
 
@@ -1734,9 +1729,9 @@ app.post("/admin/booking/:id/chat-unblock", requireAdmin, async (req, res) => {
   res.json({ ok: true, chatBlocked: false });
 });
 
-async function adminMessageThreads() {
-  const bookings = await BookingRequest.find({ clientId: { $ne: null } })
-    .select("crCode name serviceType status archived createdAt")
+async function adminMessageThreads({ archivedOnly = false } = {}) {
+  const bookings = await BookingRequest.find({ clientId: { $ne: null }, archived: archivedOnly ? true : { $ne: true } })
+    .select("crCode name serviceType status archived createdAt uploadedFiles.storedName uploadedFiles.mimetype")
     .sort({ createdAt: -1 });
   const threads = await Promise.all(bookings.map(async (booking) => {
     const [lastMessage, unreadCount] = await Promise.all([
@@ -1751,8 +1746,13 @@ async function adminMessageThreads() {
 }
 
 app.get("/admin/messages", requireAdmin, async (req, res) => {
-  const threads = await adminMessageThreads();
-  res.render("admin/messages", { threads });
+  const threads = await adminMessageThreads({ archivedOnly: false });
+  res.render("admin/messages", { threads, archivedView: false });
+});
+
+app.get("/admin/messages/archived", requireAdmin, async (req, res) => {
+  const threads = await adminMessageThreads({ archivedOnly: true });
+  res.render("admin/messages", { threads, archivedView: true });
 });
 
 app.get("/admin/messages/:id", requireAdmin, async (req, res) => {
@@ -1769,8 +1769,8 @@ app.get("/admin/messages/:id", requireAdmin, async (req, res) => {
     });
   }
 
-  const threads = await adminMessageThreads();
-  res.render("admin/messages", { threads, booking, messages });
+  const threads = await adminMessageThreads({ archivedOnly: !!booking.archived });
+  res.render("admin/messages", { threads, booking, messages, archivedView: !!booking.archived });
 });
 
 app.get("/admin/messages/attachments/:filename", requireAdmin, async (req, res) => {
@@ -2416,7 +2416,7 @@ app.post("/dashboard/notifications/mark-all-read", requireClient, async (req, re
 async function clientMessageThreads(userId) {
   const user = await User.findById(userId).populate({
     path: "bookings",
-    select: "crCode serviceType pricingTier status archived createdAt",
+    select: "crCode serviceType pricingTier status archived createdAt uploadedFiles.storedName uploadedFiles.mimetype",
     options: { sort: { createdAt: -1 } },
   });
   if (!user) return null;
@@ -2485,7 +2485,9 @@ app.post("/dashboard/messages/:id", requireClient, attachCrCodeForClient, (req, 
     attachments,
   });
 
-  io.to(chatRoom(req.params.id)).emit("new-message", message);
+  const payload = message.toObject();
+  payload.chatBlocked = req.booking.chatBlocked;
+  io.to(chatRoom(req.params.id)).emit("new-message", payload);
   res.json({ message });
 });
 

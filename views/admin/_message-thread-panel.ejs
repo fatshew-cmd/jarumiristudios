@@ -282,8 +282,16 @@
 </div>
 
 <!-- Composer -->
-<% const composerLocked = !booking.chatUnlocked; %>
-<form id="composer" class="flex flex-col gap-2 px-5 py-4 border-t border-white/5 shrink-0" enctype="multipart/form-data" data-post-path="<%= postPath %>" data-attachment-base="<%= attachmentBasePath %>" data-my-role="<%= myRole %>">
+<% const composerLocked = !booking.chatUnlocked || booking.chatBlocked; %>
+<% const composerPlaceholder = !booking.chatUnlocked
+     ? "This project hasn't been accepted yet."
+     : booking.chatBlocked ? "Unblock this client to send a message." : 'Reply to client...'; %>
+<% if (booking.chatBlocked) { %>
+<div class="px-5 py-2.5 border-t border-white/5 bg-red-500/5 text-xs text-red-400 text-center shrink-0">
+  This project's recipient is currently blocked. Unblock first to send messages.
+</div>
+<% } %>
+<form id="composer" class="flex flex-col gap-2 px-5 py-4 border-t border-white/5 shrink-0" enctype="multipart/form-data" data-post-path="<%= postPath %>" data-attachment-base="<%= attachmentBasePath %>" data-my-role="<%= myRole %>" data-booking-name="<%= booking.name %>" data-status-bucket="<%= booking.status === 'completed' ? 'completed' : 'active' %>">
   <div id="attachment-preview-list" class="hidden flex-wrap gap-2"></div>
   <div class="flex items-end gap-2">
     <button type="button" id="attach-btn" <%= composerLocked ? 'disabled' : '' %>
@@ -291,12 +299,14 @@
       <iconify-icon icon="material-symbols-light:attach-file" width="20" height="20"></iconify-icon>
     </button>
     <input type="file" id="attachment-input" name="attachments" multiple class="hidden" <%= composerLocked ? 'disabled' : '' %> />
-    <textarea id="body-input" rows="1" placeholder="<%= composerLocked ? "This project hasn't been accepted yet." : 'Reply to client...' %>" <%= composerLocked ? 'disabled' : '' %>
+    <textarea id="body-input" rows="1" placeholder="<%= composerPlaceholder %>" <%= composerLocked ? 'disabled' : '' %>
       class="flex-1 h-12 bg-white/5 border border-white/10 rounded-md px-4 py-2.5 text-sm text-white outline-none resize-none disabled:opacity-40 disabled:cursor-not-allowed"
       style="max-height:120px;"></textarea>
-    <button type="submit" <%= composerLocked ? 'disabled' : '' %>
-      class="h-12 bg-amber-400 text-black text-sm font-bold px-4 py-2.5 rounded-md hover:bg-amber-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-400">
-      Send
-    </button>
+    <span class="shrink-0<%= composerLocked ? ' cursor-not-allowed' : '' %>">
+      <button type="submit" <%= composerLocked ? 'disabled' : '' %>
+        class="h-12 bg-amber-400 text-black text-sm font-bold px-4 py-2.5 rounded-md hover:bg-amber-300 transition-colors disabled:opacity-40 disabled:pointer-events-none disabled:hover:bg-amber-400">
+        Send
+      </button>
+    </span>
   </div>
 </form>

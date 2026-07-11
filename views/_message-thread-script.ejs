@@ -564,16 +564,57 @@
     return senderRole === 'admin' ? 'Studio: ' : 'You: ';
   }
 
+  // Builds a row matching the server-rendered markup in _message-thread-panel.ejs / admin's
+  // variant — used only for a booking's *first-ever* message, where no row was rendered at page
+  // load (the inbox only lists bookings that already have at least one message). The row always
+  // corresponds to the thread currently open in this tab (sockets only join the mounted thread's
+  // room), so it's marked active and pre-read.
+  function buildThreadRowHtml(bookingId, myRole, crCode, bookingName, statusBucket) {
+    var href = (myRole === 'admin' ? '/admin/messages/' : '/dashboard/messages/') + bookingId;
+    var nameHtml = myRole === 'admin'
+      ? '<span class="text-gray-500 text-xs truncate">' + escapeHtml(bookingName || '') + '</span>'
+      : '';
+    return '<a href="' + href + '" class="thread-row active" data-booking-id="' + bookingId + '" data-status="' + statusBucket + '" data-unread="0">' +
+      '<div class="thread-icon"><iconify-icon icon="material-symbols-light:chat" width="15" height="15" style="color:#f59e0b"></iconify-icon></div>' +
+      '<div class="flex-1 min-w-0">' +
+        '<div class="flex items-center gap-2">' +
+          '<span class="font-mono text-amber-400 text-xs font-semibold">' + escapeHtml(crCode) + '</span>' +
+          nameHtml +
+        '</div>' +
+        '<p class="text-sm text-gray-300 mt-0.5 truncate"></p>' +
+      '</div>' +
+    '</a>';
+  }
+
   function updateThreadRow(bookingId, m, myRole) {
     var row = document.querySelector('.thread-row[data-booking-id="' + bookingId + '"]');
-    if (!row) return;
+    if (!row) {
+      var emptyEl = document.getElementById('thread-list-empty');
+      var container = emptyEl ? emptyEl.parentElement : null;
+      if (!container || !m.crCode) return; // no sidebar list on this page, or malformed payload
+      var composer = document.getElementById('composer');
+      var wrap = document.createElement('div');
+      wrap.innerHTML = buildThreadRowHtml(bookingId, myRole, m.crCode,
+        composer ? composer.dataset.bookingName : '',
+        composer ? composer.dataset.statusBucket : 'active');
+      row = wrap.firstElementChild;
+      emptyEl.classList.add('hidden');
+      container.appendChild(row);
+    }
     var preview = row.querySelector('p');
     if (preview) {
       preview.classList.remove('text-gray-700');
       preview.textContent = threadRowPrefix(m.senderRole, myRole) + (m.body || attachmentsPreviewLabel(messageAttachments(m)));
     }
     var list = row.parentElement;
-    if (list && list.firstElementChild !== row) list.insertBefore(row, list.firstElementChild);
+    // Bump to the top of the *rows*, not the container — on the client dashboard the search bar
+    // is a sibling of the rows (no dedicated scroll wrapper like the admin inbox has), so jumping
+    // to list.firstElementChild would shove the row above the search box.
+    var topRow = list ? list.querySelector('.thread-row') : null;
+    if (topRow && topRow !== row) list.insertBefore(row, topRow);
+    // Re-run the sidebar's search/filter now that a row was added or its preview text changed —
+    // it re-queries .thread-row fresh each call (see dashboard-messages.ejs / admin/messages.ejs).
+    if (typeof window.applyThreadFilters === 'function') window.applyThreadFilters();
   }
 
   function renderMessage(bookingId, m, myRole, attachmentBase) {
@@ -679,6 +720,43 @@
     });
   };
 
+  // Reconciles the composer's lock state against the chatBlocked flag riding along on each
+  // incoming message — the client's page only learns about a mute/unmute via chat traffic, not a
+  // dedicated push, so this runs on every 'new-message' event rather than once at page load.
+  // Only meaningful for the client's own panel: the admin composer is never gated by chatBlocked.
+  function applyChatBlockedState(chatBlocked) {
+    var composer = document.getElementById('composer');
+    if (!composer || composer.dataset.myRole !== 'client') return;
+    if (composer.dataset.chatUnlocked !== 'true') return; // still gated by project acceptance, not just mute
+    var wasBlocked = composer.dataset.chatBlocked === 'true';
+    if (wasBlocked === !!chatBlocked) return;
+
+    composer.dataset.chatBlocked = chatBlocked ? 'true' : 'false';
+    var bodyInput = document.getElementById('body-input');
+    var attachBtn = document.getElementById('attach-btn');
+    var attachmentInput = document.getElementById('attachment-input');
+    var submitBtn = composer.querySelector('button[type="submit"]');
+    [attachBtn, attachmentInput, bodyInput, submitBtn].forEach(function (el) {
+      if (el) el.disabled = !!chatBlocked;
+    });
+    if (bodyInput) bodyInput.placeholder = chatBlocked ? "You've been restricted from sending messages." : 'Write a message...';
+    // Chromium ignores `cursor` on a disabled <button> itself, so the not-allowed cursor is set on
+    // the wrapping <span> instead (see _message-thread-panel.ejs) — keep it in sync here too.
+    var submitWrap = submitBtn ? submitBtn.parentElement : null;
+    if (submitWrap) submitWrap.classList.toggle('cursor-not-allowed', !!chatBlocked);
+
+    var banner = document.getElementById('chat-blocked-banner');
+    if (chatBlocked && !banner) {
+      banner = document.createElement('div');
+      banner.id = 'chat-blocked-banner';
+      banner.className = 'px-5 py-2.5 border-t border-white/5 bg-red-500/5 text-xs text-red-400 text-center shrink-0';
+      banner.textContent = "You've been restricted from sending messages on this project.";
+      composer.parentNode.insertBefore(banner, composer);
+    } else if (!chatBlocked && banner) {
+      banner.remove();
+    }
+  }
+
   // Admin-only mute toggle — isCurrentlyBlocked is the state *before* the click, so we hit
   // whichever endpoint flips it the other way.
   window.toggleChatBlock = function (bookingId, isCurrentlyBlocked) {
@@ -700,7 +778,10 @@
     var attachmentBase = composer.dataset.attachmentBase;
 
     currentSocket = io({ query: { bookingId: bookingId } });
-    currentSocket.on('new-message', function (m) { renderMessage(bookingId, m, myRole, attachmentBase); });
+    currentSocket.on('new-message', function (m) {
+      renderMessage(bookingId, m, myRole, attachmentBase);
+      if (typeof m.chatBlocked === 'boolean') applyChatBlockedState(m.chatBlocked);
+    });
     currentSocket.on('message-deleted', function (data) { applyMessageDeleted(data.messageId); });
 
     var bodyInput = document.getElementById('body-input');
