@@ -378,6 +378,24 @@ async function hasTrustedDepositHistory(userId) {
   return BookingRequest.exists({ clientId: userId, depositStatus: "paid" });
 }
 
+// Pulls every still-anonymous booking under this account's email into the account —
+// not just whichever one prompted the login/signup — so a client who submitted several
+// guest requests before ever authenticating gets them all regrouped in one shot. Only
+// called once the user has proven ownership of the email (successful login or signup),
+// never at anonymous submission time, since matching on email alone isn't proof of identity.
+async function linkOrphanedBookings(user) {
+  const orphaned = await BookingRequest.find({ clientId: null, email: user.email }).select("_id");
+  if (!orphaned.length) return;
+  const orphanedIds = orphaned.map((b) => b._id);
+  await BookingRequest.updateMany({ _id: { $in: orphanedIds } }, { clientId: user._id });
+  const existingIds = new Set(user.bookings.map((id) => id.toString()));
+  const newIds = orphanedIds.filter((id) => !existingIds.has(id.toString()));
+  if (newIds.length) {
+    user.bookings.push(...newIds);
+    await user.save();
+  }
+}
+
 async function preCrCode(req, res, next) {
   try {
     req.crCode = await generateCrCode();
@@ -975,18 +993,7 @@ app.post("/login", async (req, res) => {
   await LoginAttempt.deleteMany({ key: attemptKey });
   req.session.userId = user._id.toString();
 
-  // Link a just-submitted booking if a crCode was passed through
-  if (cr) {
-    const booking = await BookingRequest.findOne({ crCode: cr.toUpperCase().trim(), clientId: null });
-    if (booking) {
-      booking.clientId = user._id;
-      await booking.save();
-      if (!user.bookings.includes(booking._id)) {
-        user.bookings.push(booking._id);
-        await user.save();
-      }
-    }
-  }
+  await linkOrphanedBookings(user);
 
   res.redirect(next && next.startsWith("/") ? next : "/dashboard");
 });
@@ -1017,6 +1024,7 @@ app.post("/signup", async (req, res) => {
     await user.save();
     booking.clientId = user._id;
     await booking.save();
+    await linkOrphanedBookings(user);
     req.session.userId = user._id.toString();
     res.redirect("/dashboard");
   } catch (err) {
