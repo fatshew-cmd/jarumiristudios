@@ -43,12 +43,6 @@
       <p class="text-gray-500 text-sm mt-2">Client portal</p>
     </div>
 
-    <% if (locals.error) { %>
-    <div class="mb-5 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center">
-      <%= error %>
-    </div>
-    <% } %>
-
     <form action="/login" method="POST" class="space-y-4">
       <input type="hidden" name="next" value="<%= next %>" />
       <input type="hidden" name="cr" value="<%= cr %>" />
@@ -87,6 +81,9 @@
     }
     <% if (locals.reset) { %>
     showToast('Password updated', 'Log in with your new password.');
+    <% } %>
+    <% if (locals.error) { %>
+    showToast(<%- JSON.stringify(error) %>, null, 'error');
     <% } %>
   </script>
 </body>

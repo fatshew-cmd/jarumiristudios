@@ -752,6 +752,17 @@ app.get("/track", async (req, res) => {
   res.render("track", { searched: true, method: "code", code: code.toUpperCase().trim(), booking });
 });
 
+// Smart link used in emails: sends the client to their project page if
+// they're logged in and own it, otherwise falls back to the tracking page.
+app.get("/go/:crCode", async (req, res) => {
+  const crCode = req.params.crCode.toUpperCase().trim();
+  if (req.session.userId) {
+    const booking = await BookingRequest.findOne({ crCode, clientId: req.session.userId, filesDeleted: { $ne: true } }).select("_id");
+    if (booking) return res.redirect(`/dashboard/booking/${booking._id}`);
+  }
+  res.redirect(`/track?code=${encodeURIComponent(crCode)}`);
+});
+
 app.get("/hire", async (req, res) => {
   if (!req.session.userId) return res.render("hire", { canUploadNow: false });
   const user = await User.findById(req.session.userId);
