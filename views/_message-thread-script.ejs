@@ -569,16 +569,21 @@
   // load (the inbox only lists bookings that already have at least one message). The row always
   // corresponds to the thread currently open in this tab (sockets only join the mounted thread's
   // room), so it's marked active and pre-read.
-  function buildThreadRowHtml(bookingId, myRole, crCode, bookingName, statusBucket) {
+  function buildThreadRowHtml(bookingId, myRole, crCode, bookingName, statusBucket, thumbSrc, thumbIsVideo) {
     var href = (myRole === 'admin' ? '/admin/messages/' : '/dashboard/messages/') + bookingId;
     var nameHtml = myRole === 'admin'
-      ? '<span class="text-gray-500 text-xs truncate">' + escapeHtml(bookingName || '') + '</span>'
+      ? '<span class="text-gray-400 text-xs truncate">' + escapeHtml(bookingName || '') + '</span>'
       : '';
+    var iconHtml = thumbSrc && thumbIsVideo
+      ? '<video src="' + escapeHtml(thumbSrc) + '" muted preload="metadata" class="thread-thumb-video" onerror="handleThreadThumbError(this)"></video>'
+      : thumbSrc
+      ? '<img src="' + escapeHtml(thumbSrc) + '" alt="" onerror="handleThreadThumbError(this)" />'
+      : '<iconify-icon icon="material-symbols-light:chat" width="15" height="15" style="color:#f59e0b"></iconify-icon>';
     return '<a href="' + href + '" class="thread-row active" data-booking-id="' + bookingId + '" data-status="' + statusBucket + '" data-unread="0">' +
-      '<div class="thread-icon"><iconify-icon icon="material-symbols-light:chat" width="15" height="15" style="color:#f59e0b"></iconify-icon></div>' +
+      '<div class="thread-icon">' + iconHtml + '</div>' +
       '<div class="flex-1 min-w-0">' +
         '<div class="flex items-center gap-2">' +
-          '<span class="font-mono text-amber-400 text-xs font-semibold">' + escapeHtml(crCode) + '</span>' +
+          '<span class="font-mono text-amber-400 text-sm font-semibold">' + escapeHtml(crCode) + '</span>' +
           nameHtml +
         '</div>' +
         '<p class="text-sm text-gray-300 mt-0.5 truncate"></p>' +
@@ -596,10 +601,18 @@
       var wrap = document.createElement('div');
       wrap.innerHTML = buildThreadRowHtml(bookingId, myRole, m.crCode,
         composer ? composer.dataset.bookingName : '',
-        composer ? composer.dataset.statusBucket : 'active');
+        composer ? composer.dataset.statusBucket : 'active',
+        composer ? composer.dataset.thumbSrc : '',
+        composer ? composer.dataset.thumbIsVideo === 'true' : false);
       row = wrap.firstElementChild;
       emptyEl.classList.add('hidden');
       container.appendChild(row);
+      var thumbVideo = row.querySelector('video.thread-thumb-video');
+      if (thumbVideo) {
+        var seek = function () { if (thumbVideo.currentTime === 0) thumbVideo.currentTime = 0.1; };
+        if (thumbVideo.readyState >= 2) seek();
+        else thumbVideo.addEventListener('loadeddata', seek, { once: true });
+      }
     }
     var preview = row.querySelector('p');
     if (preview) {

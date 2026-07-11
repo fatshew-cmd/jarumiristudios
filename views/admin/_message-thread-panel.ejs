@@ -19,8 +19,8 @@
       <% } %>
     </div>
     <div class="min-w-0">
-      <p class="text-base font-semibold text-white truncate"><%= booking.name %></p>
-      <p class="font-mono text-amber-400 text-xs font-semibold"><%= booking.crCode %></p>
+      <p class="font-mono text-amber-400 text-base font-semibold"><%= booking.crCode %></p>
+      <p class="text-xs text-gray-400 truncate"><%= booking.name %></p>
     </div>
   </a>
   <% if (booking.filesDeleted) { %>
@@ -196,7 +196,18 @@
   </div>
   <% }) %>
   <% if (!messages.length) { %>
-  <p class="text-xs <%= booking.chatUnlocked ? 'text-gray-600' : 'text-gray-400' %>"><%= booking.chatUnlocked ? 'No messages yet.' : 'Chat opens once this project is accepted.' %></p>
+  <div class="h-full flex flex-col items-center justify-center text-center px-6">
+    <div class="w-16 h-16 rounded-full bg-white/3 border border-white/8 flex items-center justify-center mb-4">
+      <iconify-icon icon="material-symbols-light:<%= booking.chatUnlocked ? 'chat-bubble-outline' : 'lock-outline' %>" width="28" height="28" class="text-gray-600"></iconify-icon>
+    </div>
+    <% if (!booking.chatUnlocked) { %>
+    <p class="text-sm font-semibold text-gray-300">Chat is locked</p>
+    <p class="text-xs text-gray-600 mt-1 max-w-60">Chat opens once this project is accepted.</p>
+    <% } else { %>
+    <p class="text-sm font-semibold text-gray-300">No messages yet</p>
+    <p class="text-xs text-gray-600 mt-1 max-w-60">Start the conversation with <%= booking.name %>.</p>
+    <% } %>
+  </div>
   <% } %>
 </div>
 
@@ -311,7 +322,7 @@
   This project's recipient is currently blocked. Unblock first to send messages.
 </div>
 <% } %>
-<form id="composer" class="flex flex-col gap-2 px-5 pt-4 border-t border-white/5 shrink-0" style="padding-bottom: max(1rem, env(safe-area-inset-bottom))" enctype="multipart/form-data" data-post-path="<%= postPath %>" data-attachment-base="<%= attachmentBasePath %>" data-my-role="<%= myRole %>" data-booking-name="<%= booking.name %>" data-status-bucket="<%= booking.status === 'completed' ? 'completed' : 'active' %>">
+<form id="composer" class="flex flex-col gap-2 px-5 pt-4 border-t border-white/5 shrink-0" style="padding-bottom: max(1rem, env(safe-area-inset-bottom))" enctype="multipart/form-data" data-post-path="<%= postPath %>" data-attachment-base="<%= attachmentBasePath %>" data-my-role="<%= myRole %>" data-booking-name="<%= booking.name %>" data-status-bucket="<%= booking.status === 'completed' ? 'completed' : 'active' %>" data-thumb-src="<%= headerThumbSrc || '' %>" data-thumb-is-video="<%= headerThumbIsVideo ? 'true' : 'false' %>">
   <div id="attachment-preview-list" class="hidden flex-wrap gap-2"></div>
   <div class="flex items-end gap-2">
     <button type="button" id="attach-btn" <%= composerLocked ? 'disabled' : '' %>
