@@ -946,6 +946,13 @@ async function isRateLimited(key, max, windowMs) {
   return count >= max;
 }
 
+// Oldest attempt still inside the window is the one whose expiry frees up a slot.
+async function getRateLimitRetryAt(key, windowMs) {
+  const since = new Date(Date.now() - windowMs);
+  const oldest = await LoginAttempt.findOne({ key, createdAt: { $gte: since } }).sort({ createdAt: 1 });
+  return oldest ? new Date(oldest.createdAt.getTime() + windowMs) : null;
+}
+
 // ── Client auth routes ──
 app.get("/login", (req, res) => {
   if (req.session.userId) return res.redirect("/dashboard");
@@ -1024,17 +1031,24 @@ app.post("/signup", async (req, res) => {
 
 app.get("/forgot-password", (req, res) => {
   if (req.session.userId) return res.redirect("/dashboard");
-  res.render("forgot-password", { submitted: false });
+  res.render("forgot-password", { submitted: false, rateLimited: false, retryAt: null });
 });
 
 app.post("/forgot-password", async (req, res) => {
   const email = req.body.email?.trim().toLowerCase() || "";
   const attemptKey = `reset:${email}`;
 
+  // Rate-limit status is safe to surface directly: it's checked before the user
+  // lookup below, so it behaves identically whether or not the email is on file —
+  // it can't be used to enumerate accounts.
+  if (email && (await isRateLimited(attemptKey, RESET_MAX_ATTEMPTS, RESET_ATTEMPT_WINDOW_MS))) {
+    const retryAt = await getRateLimitRetryAt(attemptKey, RESET_ATTEMPT_WINDOW_MS);
+    return res.render("forgot-password", { submitted: false, rateLimited: true, retryAt });
+  }
+
   // Always render the same neutral confirmation, whether or not the email is
-  // on file — avoids leaking account existence. Check before recording so the
-  // current attempt doesn't count against its own limit (see /login above).
-  if (email && !(await isRateLimited(attemptKey, RESET_MAX_ATTEMPTS, RESET_ATTEMPT_WINDOW_MS))) {
+  // on file — avoids leaking account existence.
+  if (email) {
     await LoginAttempt.create({ key: attemptKey });
     const user = await User.findOne({ email });
     if (user) {
@@ -1046,7 +1060,7 @@ app.post("/forgot-password", async (req, res) => {
     }
   }
 
-  res.render("forgot-password", { submitted: true });
+  res.render("forgot-password", { submitted: true, rateLimited: false, retryAt: null });
 });
 
 app.get("/reset-password/:token", async (req, res) => {
