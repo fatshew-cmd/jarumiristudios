@@ -61,6 +61,12 @@
       white-space: nowrap;
     }
 
+    @media (max-width: 1023px) {
+      .projects-table thead th { padding: 8px 8px; }
+      .projects-table tbody td { padding: 8px 8px; }
+      .row-cb { padding-left: 10px; }
+    }
+
     .projects-table tbody tr {
       border-bottom: 1px solid rgba(255,255,255,0.07);
       transition: background 0.15s;
@@ -84,9 +90,9 @@
     }
     .project-code-link:hover { color: #f59e0b; }
 
-    .thumb-cell { width: 72px; }
+    .thumb-cell { width: 88px; }
     .thumb-wrap {
-      width: 64px; height: 42px;
+      width: 80px; height: 52px;
       background: rgba(255,255,255,0.06);
       border: 1px solid rgba(255,255,255,0.12);
       border-radius: 4px; overflow: hidden;
@@ -120,7 +126,7 @@
 
     .cta-btn {
       display: inline-flex; align-items: center; justify-content: center;
-      width: 30px; height: 30px; border-radius: 6px;
+      width: 34px; height: 34px; border-radius: 6px;
       background: transparent; border: none; cursor: pointer;
       color: #ffffff; transition: all 0.15s;
     }
@@ -132,6 +138,7 @@
     .cta-btn.download:hover { background: rgba(245,158,11,0.15); color: #fcd34d; }
 
     .projects-table tbody tr.selected { background: rgba(255,255,255,0.04); }
+    div.project-row.selected { background: rgba(255,255,255,0.04); border-color: rgba(245,158,11,0.3); }
     .row-cb { width: 36px; padding: 0 0 0 16px; }
     .cb-icon { color: #4b5563; cursor: pointer; transition: color 0.15s; display: block; }
     .cb-icon:hover { color: #9ca3af; }
@@ -168,11 +175,11 @@
   %>
 
   <!-- Mobile top bar -->
-  <header class="lg:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-[#0d0d0d] border-b border-white/5 flex items-center justify-between px-4">
-    <span class="brand text-[15px] font-bold text-white">Jarumiri<span class="text-amber-400">.</span></span>
-    <button onclick="toggleSidebar()" class="text-gray-500 hover:text-white transition-colors p-1.5">
+  <header class="lg:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-[#0d0d0d] border-b border-white/5 flex items-center gap-2 px-4">
+    <button onclick="toggleSidebar()" class="h-12 w-12 flex items-center justify-center text-gray-500 hover:text-white transition-colors cursor-pointer">
       <iconify-icon icon="material-symbols-light:menu" width="22" height="22"></iconify-icon>
     </button>
+    <span class="brand text-[15px] font-bold text-white leading-none">Jarumiri Studios<span class="text-amber-400">.</span></span>
   </header>
 
   <div id="sidebar-overlay" class="lg:hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-30 hidden" onclick="toggleSidebar()"></div>
@@ -233,12 +240,12 @@
   <div class="lg:ml-55 min-h-screen">
     <div class="lg:hidden h-14"></div>
 
-    <main style="padding: 24px 50px 50px;">
+    <main class="px-4 pt-3 pb-4 lg:px-12.5 lg:pt-6 lg:pb-12.5">
 
 
       <!-- Projects section -->
       <div class="flex items-center justify-between mb-5">
-        <h2 class="text-sm font-semibold text-white">Projects</h2>
+        <h2 class="hidden lg:block text-sm font-semibold text-white">Projects</h2>
         <% if (total > 0) { %>
         <div class="flex items-center gap-4 text-[11px] font-semibold uppercase tracking-widest">
           <span class="text-gray-400"><%= total %> total</span>
@@ -281,7 +288,82 @@
       </div>
 
       <% } else { %>
-      <div style="overflow-x: auto; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;">
+
+      <!-- Mobile cards -->
+      <div class="lg:hidden space-y-2">
+        <% user.bookings.forEach(b => {
+          const dateStr = new Date(b.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          const videoFile = b.uploadedFiles && b.uploadedFiles.find(f => f.mimetype && f.mimetype.startsWith('video/'));
+          const thumbSrc = videoFile ? `/dashboard/uploads/${videoFile.storedName}` : null;
+          const price = b.agreedPrice || null;
+          const estimatedTotal = (TIER_PRICES[b.pricingTier] || 0) + (b.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0) - (b.discountAmount || 0);
+          const displayCost = price || (estimatedTotal > 0 ? estimatedTotal : null);
+          const isEstimate  = !price && displayCost != null;
+          const depositPaid = b.depositStatus === 'paid';
+          const finalPaid   = b.finalPaymentStatus === 'paid';
+          const amountPaid  = price ? (depositPaid ? price * 0.30 : 0) + (finalPaid ? price * 0.70 : 0) : 0;
+          const remaining   = price ? price - amountPaid : null;
+          const fmtMoney = (v) => v != null ? '$' + v.toFixed(2) : '—';
+          const canManage = !b.archived && b.status !== 'declined' && b.status !== 'completed';
+          const pendingInvoiceUrl = b.depositStatus === 'pending' ? b.depositInvoiceUrl : (b.finalPaymentStatus === 'pending' ? b.finalInvoiceUrl : null);
+        %>
+        <div class="project-row rounded-lg border border-white/8 bg-white/2 p-3" data-id="<%= b._id %>" onclick="window.location='/dashboard/booking/<%= b._id %>'" style="cursor:pointer;">
+          <!-- Row 1: checkbox, thumbnail, code, date -->
+          <div class="flex items-center gap-3">
+            <iconify-icon icon="material-symbols-light:check-box-outline-blank" width="20" height="20" class="cb-icon shrink-0" onclick="event.stopPropagation(); clientToggleRow(this, '<%= b._id %>')"></iconify-icon>
+            <div class="thumb-wrap shrink-0">
+              <% if (thumbSrc) { %>
+              <video src="<%= thumbSrc %>" muted preload="metadata" class="project-thumb"></video>
+              <% } else { %>
+              <iconify-icon icon="material-symbols-light:movie" width="18" height="18" class="thumb-placeholder"></iconify-icon>
+              <% } %>
+            </div>
+            <a href="/dashboard/booking/<%= b._id %>" class="project-code-link flex-1" onclick="event.stopPropagation()"><%= b.crCode %></a>
+            <span class="text-gray-500 text-[12px] whitespace-nowrap"><%= dateStr %></span>
+          </div>
+
+          <!-- Row 2: est. cost, paid, due, status -->
+          <div class="flex items-center justify-between gap-2 mt-3 min-h-10 text-[13px]">
+            <div class="flex items-center gap-3">
+              <span class="<%= price ? 'amount-pos' : (isEstimate ? 'amount-est' : 'amount-zero') %>">Est <%= price ? fmtMoney(price) : (isEstimate ? '~' + fmtMoney(displayCost) : '—') %></span>
+              <span class="<%= amountPaid > 0 ? 'amount-pos' : 'amount-zero' %>">Paid <%= price ? fmtMoney(amountPaid) : '—' %></span>
+              <span class="<%= remaining && remaining > 0 ? 'amount-due' : 'amount-zero' %>">Due <%= remaining != null ? (remaining > 0 ? fmtMoney(remaining) : '—') : '—' %></span>
+            </div>
+            <span class="status-pill status-<%= b.archived ? 'archived' : b.status %>"><%= b.archived ? 'Archived' : b.status.replace('-', '‑') %></span>
+          </div>
+
+          <!-- Row 3: actions -->
+          <div class="flex items-center justify-end gap-1 mt-2 h-10">
+            <% if (pendingInvoiceUrl) { %>
+            <a class="cta-btn pay" title="Pay now" href="<%= pendingInvoiceUrl %>" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+              <iconify-icon icon="material-symbols-light:send-money" width="20" height="20"></iconify-icon>
+            </a>
+            <% } %>
+            <% if (b.deliverablesUnlocked && b.deliverableFiles && b.deliverableFiles.length > 0) { %>
+            <a class="cta-btn download" title="Download final files" href="/dashboard/booking/<%= b._id %>" onclick="event.stopPropagation()">
+              <iconify-icon icon="material-symbols-light:download-for-offline" width="20" height="20"></iconify-icon>
+            </a>
+            <% } %>
+            <button class="cta-btn danger" title="Delete project" onclick="event.stopPropagation(); deleteProject('<%= b._id %>', '<%= b.crCode %>')">
+              <iconify-icon icon="material-symbols-light:delete" width="20" height="20"></iconify-icon>
+            </button>
+            <% if (canManage && b.status !== 'paused') { %>
+            <button class="cta-btn warn" title="Pause project" onclick="event.stopPropagation(); pauseProject('<%= b._id %>', '<%= b.crCode %>')">
+              <iconify-icon icon="material-symbols-light:pause-circle" width="20" height="20"></iconify-icon>
+            </button>
+            <% } %>
+            <% if (canManage) { %>
+            <button class="cta-btn info" title="Nudge admin" onclick="event.stopPropagation(); nudgeAdmin('<%= b._id %>', '<%= b.crCode %>')">
+              <iconify-icon icon="material-symbols-light:notifications-active" width="20" height="20"></iconify-icon>
+            </button>
+            <% } %>
+          </div>
+        </div>
+        <% }) %>
+      </div>
+
+      <!-- Desktop table -->
+      <div class="hidden lg:block" style="overflow-x: auto; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;">
         <table class="projects-table">
           <thead>
             <tr>
@@ -318,7 +400,7 @@
               const canManage = !b.archived && b.status !== 'declined' && b.status !== 'completed';
               const pendingInvoiceUrl = b.depositStatus === 'pending' ? b.depositInvoiceUrl : (b.finalPaymentStatus === 'pending' ? b.finalInvoiceUrl : null);
             %>
-            <tr data-id="<%= b._id %>" data-crcode="<%= b.crCode %>" data-manageable="<%= canManage %>" data-status="<%= b.status %>" onclick="window.location='/dashboard/booking/<%= b._id %>'" style="cursor:pointer;">
+            <tr class="project-row" data-id="<%= b._id %>" data-crcode="<%= b.crCode %>" data-manageable="<%= canManage %>" data-status="<%= b.status %>" onclick="window.location='/dashboard/booking/<%= b._id %>'" style="cursor:pointer;">
               <!-- Checkbox -->
               <td class="row-cb">
                 <iconify-icon icon="material-symbols-light:check-box-outline-blank" width="20" height="20" class="cb-icon" onclick="event.stopPropagation(); clientToggleRow(this, '<%= b._id %>')"></iconify-icon>
@@ -424,7 +506,26 @@
     });
 
     // ── Bulk selection ──
+    // Each booking can have two DOM elements (desktop table row + mobile card),
+    // both tagged .project-row[data-id], so selection state is synced across both.
     const clientChecked = new Set();
+
+    function clientAllRowIds() {
+      return [...new Set([...document.querySelectorAll('.project-row[data-id]')].map(r => r.dataset.id))];
+    }
+
+    function clientSetRowChecked(id, checked) {
+      document.querySelectorAll(`.project-row[data-id="${id}"]`).forEach(row => {
+        row.classList.toggle('selected', checked);
+        const icon = row.querySelector('.cb-icon');
+        if (icon) {
+          icon.setAttribute('icon', checked
+            ? 'material-symbols-light:check-box'
+            : 'material-symbols-light:check-box-outline-blank');
+          icon.classList.toggle('checked', checked);
+        }
+      });
+    }
 
     function clientUpdateBulkBar() {
       const bar = document.getElementById('client-bulk-bar');
@@ -432,8 +533,8 @@
       const n = clientChecked.size;
       bar.classList.toggle('visible', n > 0);
       countEl.textContent = n + ' selected';
-      const allRows = [...document.querySelectorAll('.projects-table tbody tr[data-id]')];
-      const allChecked = allRows.length > 0 && allRows.every(r => clientChecked.has(r.dataset.id));
+      const ids = clientAllRowIds();
+      const allChecked = ids.length > 0 && ids.every(id => clientChecked.has(id));
       const saIcon = document.getElementById('client-select-all');
       if (saIcon) {
         saIcon.setAttribute('icon', allChecked
@@ -444,51 +545,25 @@
     }
 
     function clientToggleRow(icon, id) {
-      const row = icon.closest('tr');
-      if (clientChecked.has(id)) {
-        clientChecked.delete(id);
-        icon.setAttribute('icon', 'material-symbols-light:check-box-outline-blank');
-        icon.classList.remove('checked');
-        row.classList.remove('selected');
-      } else {
-        clientChecked.add(id);
-        icon.setAttribute('icon', 'material-symbols-light:check-box');
-        icon.classList.add('checked');
-        row.classList.add('selected');
-      }
+      const checked = !clientChecked.has(id);
+      if (checked) clientChecked.add(id); else clientChecked.delete(id);
+      clientSetRowChecked(id, checked);
       clientUpdateBulkBar();
     }
 
     function clientToggleSelectAll() {
-      const allRows = [...document.querySelectorAll('.projects-table tbody tr[data-id]')];
-      const allChecked = allRows.every(r => clientChecked.has(r.dataset.id));
-      allRows.forEach(row => {
-        const icon = row.querySelector('.cb-icon');
-        const id = row.dataset.id;
-        if (allChecked) {
-          clientChecked.delete(id);
-          icon.setAttribute('icon', 'material-symbols-light:check-box-outline-blank');
-          icon.classList.remove('checked');
-          row.classList.remove('selected');
-        } else {
-          clientChecked.add(id);
-          icon.setAttribute('icon', 'material-symbols-light:check-box');
-          icon.classList.add('checked');
-          row.classList.add('selected');
-        }
+      const ids = clientAllRowIds();
+      const allChecked = ids.length > 0 && ids.every(id => clientChecked.has(id));
+      ids.forEach(id => {
+        const checked = !allChecked;
+        if (checked) clientChecked.add(id); else clientChecked.delete(id);
+        clientSetRowChecked(id, checked);
       });
       clientUpdateBulkBar();
     }
 
     function clientClearSelection() {
-      [...clientChecked].forEach(id => {
-        const row = document.querySelector(`.projects-table tbody tr[data-id="${id}"]`);
-        if (row) {
-          row.classList.remove('selected');
-          const icon = row.querySelector('.cb-icon');
-          if (icon) { icon.setAttribute('icon', 'material-symbols-light:check-box-outline-blank'); icon.classList.remove('checked'); }
-        }
-      });
+      [...clientChecked].forEach(id => clientSetRowChecked(id, false));
       clientChecked.clear();
       clientUpdateBulkBar();
     }

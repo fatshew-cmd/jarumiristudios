@@ -224,18 +224,45 @@
   <div id="messenger" class="messenger <%= typeof booking !== 'undefined' && booking ? 'thread-active' : '' %>">
     <!-- Chat list column -->
     <div class="chat-list-col">
-      <% if (!threads || threads.length === 0) { %>
-      <div class="text-center py-16 px-4">
+      <!-- Search + filter -->
+      <div class="flex items-center gap-2 p-4 border-b border-white/5">
+        <div class="relative flex-1 min-w-0">
+          <iconify-icon icon="material-symbols-light:search" width="18" height="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"></iconify-icon>
+          <input type="text" id="thread-search" placeholder="Search conversations…"
+            class="w-full h-11 pl-9 pr-3 rounded-md bg-white/5 border border-white/10 text-sm text-white placeholder-gray-500 outline-none focus:border-amber-400/40 transition-colors" />
+        </div>
+        <div class="relative shrink-0">
+          <button type="button" id="thread-filter-btn" class="h-11 w-11 flex items-center justify-center rounded-md bg-white/5 border border-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer">
+            <iconify-icon icon="material-symbols-light:filter-list" width="18" height="18"></iconify-icon>
+          </button>
+          <div id="thread-filter-menu" class="hidden absolute right-0 top-full mt-1 w-48 rounded-md bg-[#131313] border border-white/10 shadow-xl z-20 py-1">
+            <div class="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600">Status</div>
+            <button type="button" class="thread-filter-opt active w-full text-left px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5 cursor-pointer" data-filter-type="read" data-filter-value="all">All</button>
+            <button type="button" class="thread-filter-opt w-full text-left px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5 cursor-pointer" data-filter-type="read" data-filter-value="unread">Unread only</button>
+            <div class="border-t border-white/5 my-1"></div>
+            <div class="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600">Project</div>
+            <button type="button" class="thread-filter-opt active w-full text-left px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5 cursor-pointer" data-filter-type="status" data-filter-value="all">All</button>
+            <button type="button" class="thread-filter-opt w-full text-left px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5 cursor-pointer" data-filter-type="status" data-filter-value="active">Active</button>
+            <button type="button" class="thread-filter-opt w-full text-left px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5 cursor-pointer" data-filter-type="status" data-filter-value="completed">Completed</button>
+            <button type="button" class="thread-filter-opt w-full text-left px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5 cursor-pointer" data-filter-type="status" data-filter-value="archived">Archived</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="thread-list-empty" class="text-center py-16 px-4 <%= (threads && threads.length) ? 'hidden' : '' %>">
         <div class="w-11 h-11 rounded-md bg-white/3 border border-white/8 flex items-center justify-center mx-auto mb-4">
           <iconify-icon icon="material-symbols-light:chat" width="22" height="22" class="text-gray-700"></iconify-icon>
         </div>
         <p class="text-gray-600 text-sm">No client conversations yet.</p>
       </div>
-      <% } else { %>
-      <% threads.forEach(t => {
+      <div id="thread-list-no-match" class="hidden text-center py-16 px-4">
+        <p class="text-gray-600 text-sm">No conversations match your search.</p>
+      </div>
+      <% (threads || []).forEach(t => {
         const isActive = typeof booking !== 'undefined' && booking && String(booking._id) === String(t.booking._id);
+        const statusBucket = t.booking.archived ? 'archived' : (t.booking.status === 'completed' ? 'completed' : 'active');
       %>
-      <a href="/admin/messages/<%= t.booking._id %>" class="thread-row <%= isActive ? 'active' : '' %>" data-booking-id="<%= t.booking._id %>">
+      <a href="/admin/messages/<%= t.booking._id %>" class="thread-row <%= isActive ? 'active' : '' %>" data-booking-id="<%= t.booking._id %>" data-status="<%= statusBucket %>" data-unread="<%= t.unreadCount %>">
         <div class="thread-icon">
           <iconify-icon icon="material-symbols-light:chat" width="15" height="15" style="color:#f59e0b"></iconify-icon>
         </div>
@@ -245,14 +272,11 @@
             <span class="text-gray-500 text-xs truncate"><%= t.booking.name %></span>
           </div>
           <p class="text-sm text-gray-300 mt-0.5 truncate">
-            <% if (t.lastMessage) {
+            <%
               const atts = (t.lastMessage.attachments && t.lastMessage.attachments.length) ? t.lastMessage.attachments : (t.lastMessage.attachment && t.lastMessage.attachment.storedName ? [t.lastMessage.attachment] : []);
               const attsLabel = atts.length ? '📎 ' + (atts.length === 1 ? atts[0].originalName : atts.length + ' files') : '';
             %>
-              <%= t.lastMessage.senderRole === 'admin' ? 'You: ' : '' %><%= t.lastMessage.deleted ? 'This message was deleted' : (t.lastMessage.body || attsLabel) %>
-            <% } else { %>
-              <span class="<%= t.booking.chatUnlocked ? 'text-gray-700' : 'text-gray-500' %>"><%= t.booking.chatUnlocked ? 'No messages yet.' : 'Not accepted yet.' %></span>
-            <% } %>
+            <%= t.lastMessage.senderRole === 'admin' ? 'You: ' : '' %><%= t.lastMessage.deleted ? 'This message was deleted' : (t.lastMessage.body || attsLabel) %>
           </p>
         </div>
         <% if (t.unreadCount > 0) { %>
@@ -260,7 +284,6 @@
         <% } %>
       </a>
       <% }) %>
-      <% } %>
     </div>
 
     <!-- Thread panel -->
@@ -280,6 +303,55 @@
     </div>
   </div>
 
+  <script>
+    (function () {
+      const searchInput = document.getElementById('thread-search');
+      const filterBtn = document.getElementById('thread-filter-btn');
+      const filterMenu = document.getElementById('thread-filter-menu');
+      const noMatchEl = document.getElementById('thread-list-no-match');
+      const rows = Array.from(document.querySelectorAll('.thread-row'));
+      const filters = { read: 'all', status: 'all' };
+
+      function applyFilters() {
+        const q = (searchInput?.value || '').trim().toLowerCase();
+        let visibleCount = 0;
+        rows.forEach((row) => {
+          const matchesSearch = !q || row.textContent.toLowerCase().includes(q);
+          const matchesRead = filters.read === 'all' || (filters.read === 'unread' && Number(row.dataset.unread || 0) > 0);
+          const matchesStatus = filters.status === 'all' || row.dataset.status === filters.status;
+          const visible = matchesSearch && matchesRead && matchesStatus;
+          row.classList.toggle('hidden', !visible);
+          if (visible) visibleCount++;
+        });
+        if (noMatchEl) noMatchEl.classList.toggle('hidden', visibleCount > 0 || rows.length === 0);
+      }
+
+      searchInput?.addEventListener('input', applyFilters);
+
+      filterBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        filterMenu?.classList.toggle('hidden');
+      });
+      document.addEventListener('click', (e) => {
+        if (filterMenu && !filterMenu.classList.contains('hidden') && !filterMenu.contains(e.target) && e.target !== filterBtn) {
+          filterMenu.classList.add('hidden');
+        }
+      });
+
+      document.querySelectorAll('.thread-filter-opt').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const type = btn.dataset.filterType;
+          filters[type] = btn.dataset.filterValue;
+          document.querySelectorAll(`.thread-filter-opt[data-filter-type="${type}"]`).forEach((b) => {
+            b.classList.toggle('active', b === btn);
+            b.classList.toggle('text-amber-400', b === btn);
+            b.classList.toggle('text-gray-300', b !== btn);
+          });
+          applyFilters();
+        });
+      });
+    })();
+  </script>
   <%- include('../_message-thread-script', { booking: typeof booking !== 'undefined' ? booking : null }) %>
   <%- include('../_toast') %>
   <%- include('../_confirm-modal') %>

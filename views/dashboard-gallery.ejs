@@ -204,11 +204,11 @@
 <body class="bg-[#080808] text-gray-100 antialiased">
 
   <!-- Mobile top bar -->
-  <header class="lg:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-[#0d0d0d] border-b border-white/5 flex items-center justify-between px-4">
-    <span class="brand text-[15px] font-bold text-white">Jarumiri<span class="text-amber-400">.</span></span>
-    <button onclick="toggleSidebar()" class="text-gray-500 hover:text-white transition-colors p-1.5">
+  <header class="lg:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-[#0d0d0d] border-b border-white/5 flex items-center gap-2 px-4">
+    <button onclick="toggleSidebar()" class="h-12 w-12 flex items-center justify-center text-gray-500 hover:text-white transition-colors cursor-pointer">
       <iconify-icon icon="material-symbols-light:menu" width="22" height="22"></iconify-icon>
     </button>
+    <span class="brand text-[15px] font-bold text-white leading-none">Jarumiri Studios<span class="text-amber-400">.</span></span>
   </header>
 
   <div id="sidebar-overlay" class="lg:hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-30 hidden" onclick="toggleSidebar()"></div>

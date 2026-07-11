@@ -1245,7 +1245,8 @@ app.get("/dashboard/booking/:id", requireClient, async (req, res) => {
     User.findById(req.session.userId).select("email"),
   ]);
   if (!booking) return res.redirect("/dashboard");
-  res.render("dashboard-booking", { booking, user });
+  const bookingUnreadMessageCount = await Message.countDocuments({ bookingId: booking._id, senderRole: "admin", read: false });
+  res.render("dashboard-booking", { booking, user, bookingUnreadMessageCount });
 });
 
 app.post("/dashboard/booking/:id/delete", requireClient, async (req, res) => {
@@ -1737,13 +1738,16 @@ async function adminMessageThreads() {
   const bookings = await BookingRequest.find({ clientId: { $ne: null } })
     .select("crCode name serviceType status archived createdAt")
     .sort({ createdAt: -1 });
-  return Promise.all(bookings.map(async (booking) => {
+  const threads = await Promise.all(bookings.map(async (booking) => {
     const [lastMessage, unreadCount] = await Promise.all([
       Message.findOne({ bookingId: booking._id }).sort({ createdAt: -1 }),
       Message.countDocuments({ bookingId: booking._id, senderRole: "client", read: false }),
     ]);
     return { booking, lastMessage, unreadCount };
   }));
+  // A booking only gets a row in the inbox once a conversation has actually
+  // started — starting one now happens from the booking page, not from here.
+  return threads.filter((t) => t.lastMessage);
 }
 
 app.get("/admin/messages", requireAdmin, async (req, res) => {
@@ -2424,7 +2428,9 @@ async function clientMessageThreads(userId) {
     ]);
     return { booking, lastMessage, unreadCount };
   }));
-  return threads;
+  // A booking only gets a row in the inbox once a conversation has actually
+  // started — starting one now happens from the booking page, not from here.
+  return threads.filter((t) => t.lastMessage);
 }
 
 app.get("/dashboard/messages", requireClient, async (req, res) => {
