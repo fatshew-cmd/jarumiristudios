@@ -26,6 +26,7 @@ const Application = require("./models/Application");
 const Associate = require("./models/Associate");
 const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAdminNewApplicationAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert, sendAdminPauseAlert, sendAdminUnexpectedPaymentAlert, sendPasswordResetEmail } = require("./lib/mailer");
 const { startInvoiceExpiryJob } = require("./lib/invoiceExpiry");
+const { startDiscountExpiryJob } = require("./lib/discountExpiry");
 const { fileTypeFromMime, uniqueFilename, archiveBookingFolder } = require("./lib/uploadUtils");
 const { createR2Storage } = require("./lib/r2MulterStorage");
 const { createLocalStorage } = require("./lib/localMulterStorage");
@@ -308,6 +309,7 @@ mongoose
   .then(() => {
     console.log("MongoDB connected");
     startInvoiceExpiryJob(stripe);
+    startDiscountExpiryJob();
   })
   .catch((err) => console.error("MongoDB error:", err));
 
@@ -524,6 +526,9 @@ async function enforceApplicationSubmissionQuota(req, res, next) {
 
 const TIER_PRICES  = { Clip: 79, Scene: 189, Feature: 399 };
 const ADDON_PRICES = { "Rush delivery": 50, "Platform cut": 30, "Captions": 35, "Censored preview": 45, "Intro/outro bumper": 75, "Extra revision": 30 };
+
+const SIGNUP_DISCOUNT_PERCENT = 15;
+const SIGNUP_DISCOUNT_WINDOW_MS = 15 * 24 * 60 * 60 * 1000;
 const MAX_COUPONS_PER_BOOKING = 3;
 const MAX_PLATFORM_LINKS = 3;
 const PRICING_TIERS = ["Clip", "Scene", "Feature", "Custom"];
@@ -972,12 +977,16 @@ app.get("/hire", async (req, res) => {
       : null,
     hasCompletedProjectHistory(req.session.userId, req.visitorId),
   ]);
+  const welcomeDiscount = (user.discountPercent && user.discountExpiresAt > new Date() && !user.discountUsed)
+    ? { percent: user.discountPercent }
+    : null;
   res.render("hire", {
     loggedInUser: { email: user.email },
     lastBooking,
     platforms: user.platforms || [],
     clientType: user.clientType || "",
     canUploadNow,
+    welcomeDiscount,
   });
 });
 
@@ -1054,6 +1063,7 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
     let lastBooking = null;
     let platforms = [];
     let accountClientType = "";
+    let welcomeDiscount = null;
     if (req.session.userId) {
       const user = await User.findById(req.session.userId);
       if (user) {
@@ -1062,6 +1072,9 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
         accountClientType = user.clientType || "";
         lastBooking = user.bookings?.length
           ? await BookingRequest.findOne({ clientId: req.session.userId }).sort({ createdAt: -1 }).select("name location")
+          : null;
+        welcomeDiscount = (user.discountPercent && user.discountExpiresAt > new Date() && !user.discountUsed)
+          ? { percent: user.discountPercent }
           : null;
       }
     }
@@ -1073,6 +1086,7 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
       platforms,
       clientType: accountClientType,
       canUploadNow,
+      welcomeDiscount,
     });
   }
 
@@ -1095,9 +1109,9 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
 
     const couponCodes = [];
     let discountAmount = 0;
+    let running = subtotal;
     const rawCodes = [...new Set([].concat(req.body.couponCodes || []).filter(Boolean).map((c) => c.trim().toUpperCase()))].slice(0, MAX_COUPONS_PER_BOOKING);
     if (rawCodes.length && subtotal > 0) {
-      let running = subtotal;
       for (const rawCode of rawCodes) {
         const coupon = await Coupon.findOne({ code: rawCode, active: true });
         if (!coupon || (coupon.expiresAt && new Date() > coupon.expiresAt)) continue;
@@ -1107,6 +1121,19 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
         couponCodes.push({ code: coupon.code, discountType: coupon.discountType, discountValue: coupon.discountValue, amount });
         discountAmount += amount;
         running -= amount;
+      }
+    }
+
+    // Auto-apply the signup welcome discount (if unused/unexpired) on top of any manually entered coupons
+    let signupDiscountApplied = null;
+    if (req.session.userId && subtotal > 0) {
+      const acct = await User.findById(req.session.userId).select("discountPercent discountExpiresAt discountUsed");
+      if (acct && acct.discountPercent && acct.discountExpiresAt > new Date() && !acct.discountUsed) {
+        const amount = Math.round(running * acct.discountPercent) / 100;
+        couponCodes.push({ code: "WELCOME", discountType: "percent", discountValue: acct.discountPercent, amount });
+        discountAmount += amount;
+        running -= amount;
+        signupDiscountApplied = acct._id;
       }
     }
 
@@ -1131,6 +1158,10 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
 
     await booking.save();
     writeBookingTxt(booking);
+
+    if (signupDiscountApplied) {
+      await User.findOneAndUpdate({ _id: signupDiscountApplied, discountUsed: false }, { discountUsed: true });
+    }
 
     // Auto-link booking to logged-in user and send them straight to the dashboard
     if (req.session.userId) {
@@ -1304,6 +1335,8 @@ app.post("/signup", async (req, res) => {
       name: booking.name || "",
       location: booking.location || "",
       bookings: [booking._id],
+      discountPercent: SIGNUP_DISCOUNT_PERCENT,
+      discountExpiresAt: new Date(Date.now() + SIGNUP_DISCOUNT_WINDOW_MS),
     });
     await user.save();
     booking.clientId = user._id;

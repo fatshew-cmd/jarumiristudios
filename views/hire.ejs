@@ -1322,7 +1322,7 @@
       'Censored preview': 45, 'Intro/outro bumper': 75, 'Extra revision': 30,
     };
 
-    let appliedCoupons = []; // [{ code, discountType, discountValue }]
+    let appliedCoupons = [<% if (locals.welcomeDiscount) { %>{ code: 'WELCOME', discountType: 'percent', discountValue: <%= welcomeDiscount.percent %>, locked: true }<% } %>]; // [{ code, discountType, discountValue, locked? }]
     const MAX_COUPONS = 3;
 
     function couponsEnabled() {
@@ -1355,7 +1355,7 @@
           : Math.min(c.discountValue, running);
         discount += amt;
         running  -= amt;
-        return { code: c.code, amt };
+        return { code: c.code, label: c.locked ? 'Welcome discount' : `Coupon (${c.code})`, amt };
       });
 
       lines.innerHTML = `<div class="flex justify-between text-sm"><span class="text-gray-300">${tier} package</span><span class="text-white">$${base}</span></div>`;
@@ -1363,7 +1363,7 @@
         lines.innerHTML += `<div class="flex justify-between text-sm"><span class="text-gray-400">${a}</span><span class="text-amber-400">+$${ADDON_PRICES[a]}</span></div>`;
       });
       discountLines.forEach(d => {
-        lines.innerHTML += `<div class="flex justify-between text-sm"><span class="text-green-400">Coupon (${d.code})</span><span class="text-green-400">−$${d.amt.toFixed(2)}</span></div>`;
+        lines.innerHTML += `<div class="flex justify-between text-sm"><span class="text-green-400">${d.label}</span><span class="text-green-400">−$${d.amt.toFixed(2)}</span></div>`;
         const amtEl = document.getElementById(`coupon-chip-amt-${d.code}`);
         if (amtEl) amtEl.textContent = `$${d.amt.toFixed(2)}`;
       });
@@ -1383,7 +1383,7 @@
       if (!section) return;
 
       const enabled = couponsEnabled();
-      if (!enabled && appliedCoupons.length > 0) appliedCoupons = [];
+      if (!enabled && appliedCoupons.length > 0) appliedCoupons = appliedCoupons.filter(c => c.locked);
 
       section.classList.toggle('opacity-40', !enabled);
       section.classList.toggle('pointer-events-none', !enabled);
@@ -1396,7 +1396,7 @@
         chip.className = 'inline-flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-green-400/10 border border-green-400/20 text-xs font-semibold text-green-400';
 
         const codeSpan = document.createElement('span');
-        codeSpan.textContent = c.code;
+        codeSpan.textContent = c.locked ? 'Welcome discount' : c.code;
         chip.appendChild(codeSpan);
 
         const amtSpan = document.createElement('span');
@@ -1404,24 +1404,31 @@
         amtSpan.className = 'pl-2 border-l border-green-400/25 text-green-300';
         chip.appendChild(amtSpan);
 
-        const removeBtn = document.createElement('button');
-        removeBtn.type = 'button';
-        removeBtn.setAttribute('aria-label', `Remove ${c.code}`);
-        removeBtn.style.cssText = 'cursor:pointer;color:inherit;font-weight:700;';
-        removeBtn.textContent = '×';
-        removeBtn.onclick = () => removeCoupon(i);
-        chip.appendChild(removeBtn);
+        if (!c.locked) {
+          const removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.setAttribute('aria-label', `Remove ${c.code}`);
+          removeBtn.style.cssText = 'cursor:pointer;color:inherit;font-weight:700;';
+          removeBtn.textContent = '×';
+          removeBtn.onclick = () => removeCoupon(i);
+          chip.appendChild(removeBtn);
+        }
         chips.appendChild(chip);
 
-        const hiddenInput = document.createElement('input');
-        hiddenInput.type = 'hidden';
-        hiddenInput.name = 'couponCodes';
-        hiddenInput.value = c.code;
-        container.appendChild(hiddenInput);
+        // Locked (welcome) discount isn't a real Coupon document — it's applied server-side
+        // from the logged-in session, so it's deliberately left out of the submitted couponCodes.
+        if (!c.locked) {
+          const hiddenInput = document.createElement('input');
+          hiddenInput.type = 'hidden';
+          hiddenInput.name = 'couponCodes';
+          hiddenInput.value = c.code;
+          container.appendChild(hiddenInput);
+        }
       });
       chips.classList.toggle('hidden', appliedCoupons.length === 0);
 
-      const atMax = appliedCoupons.length >= MAX_COUPONS;
+      const enteredCount = appliedCoupons.filter(c => !c.locked).length;
+      const atMax = enteredCount >= MAX_COUPONS;
       input.disabled = !enabled || atMax;
       btn.disabled = !enabled || atMax;
       btn.classList.toggle('opacity-40', !enabled || atMax);
@@ -1442,7 +1449,7 @@
 
       if (!code) return;
 
-      if (appliedCoupons.length >= MAX_COUPONS) {
+      if (appliedCoupons.filter(c => !c.locked).length >= MAX_COUPONS) {
         msg.className = 'text-xs mt-2 text-amber-400';
         msg.textContent = 'You can apply up to 3 coupon codes.';
         msg.classList.remove('hidden');

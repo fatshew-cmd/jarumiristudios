@@ -21,6 +21,10 @@ const userSchema = new mongoose.Schema(
       default: [],
     },
     bookings:       [{ type: mongoose.Schema.Types.ObjectId, ref: "BookingRequest" }],
+    discountPercent:      { type: Number, default: null },
+    discountExpiresAt:    { type: Date, default: null },
+    discountUsed:         { type: Boolean, default: false },
+    discountReminderSent: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
