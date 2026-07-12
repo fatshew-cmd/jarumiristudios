@@ -37,23 +37,6 @@
     .status-in-progress { background: rgba(59,130,246,0.1);  color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
     .status-completed   { background: rgba(16,185,129,0.1);  color: #34d399; border: 1px solid rgba(16,185,129,0.2); }
 
-    .filter-btn {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 5px 12px; border-radius: 9999px;
-      font-size: 12px; font-weight: 500; cursor: pointer;
-      border: 1px solid rgba(255,255,255,0.08);
-      background: transparent; color: #6b7280; transition: all 0.15s;
-    }
-    .filter-btn:hover { color: #d1d5db; border-color: rgba(255,255,255,0.15); }
-    .filter-btn.active { color: #fff; background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.15); }
-
-    .sort-btn {
-      font-size: 12px; font-weight: 500; padding: 5px 10px; border-radius: 6px;
-      color: #6b7280; text-decoration: none; transition: all 0.15s;
-    }
-    .sort-btn:hover { color: #d1d5db; }
-    .sort-btn.active { color: #fff; }
-
     /* ── Project card ── */
     .project-card {
       aspect-ratio: 1 / 1;
@@ -112,6 +95,32 @@
       font-size: 11px; color: rgba(255,255,255,0.55); white-space: nowrap;
       flex-shrink: 0; margin-left: 2px;
     }
+
+    /* ── Flat file grid (single-type filter view) ── */
+    .file-tile { cursor: pointer; }
+    .file-tile-media {
+      aspect-ratio: 1 / 1;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.07);
+      background: #000;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .file-tile:hover .file-tile-media { border-color: rgba(255,255,255,0.2); transform: translateY(-1px); }
+    .file-tile-media video, .file-tile-media img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
+    .file-tile-placeholder {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.04);
+    }
+    .file-tile-caption { margin-top: 6px; }
+    .file-tile-name {
+      font-size: 12px; color: #d1d5db;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .file-tile-code { font-size: 10px; color: #6b7280; font-family: 'Courier New', monospace; margin-top: 1px; }
 
     /* ── Modal ── */
     #gallery-modal {
@@ -199,13 +208,23 @@
     .modal-thumb img, .modal-thumb video {
       width: 100%; height: 100%; object-fit: cover; display: block;
     }
+
+    @media (max-width: 767px) {
+      #gallery-modal { padding: 0; }
+      .modal-container { border-radius: 0; max-width: 100%; max-height: 100%; }
+      .modal-body { flex-direction: column; }
+      .modal-file-panel {
+        width: 100%; height: 180px;
+        border-left: none; border-top: 1px solid rgba(255,255,255,0.07);
+      }
+    }
   </style>
 </head>
 <body class="bg-[#080808] text-gray-100 antialiased">
 
   <!-- Mobile top bar -->
   <header class="lg:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-[#0d0d0d] border-b border-white/5 flex items-center gap-2 px-4">
-    <button onclick="toggleSidebar()" class="h-12 w-12 flex items-center justify-center text-gray-500 hover:text-white transition-colors cursor-pointer">
+    <button onclick="toggleSidebar()" class="h-12 w-12 flex items-center justify-center text-white transition-colors cursor-pointer">
       <iconify-icon icon="material-symbols-light:menu" width="22" height="22"></iconify-icon>
     </button>
     <span class="brand text-[15px] font-bold text-white leading-none">Jarumiri Studios<span class="text-amber-400">.</span></span>
@@ -269,10 +288,23 @@
   <div class="lg:ml-55 min-h-screen">
     <div class="lg:hidden h-14"></div>
 
-    <main style="padding: 50px;">
+    <main class="px-4 pt-3 pb-4 lg:px-12.5 lg:pt-6 lg:pb-12.5">
+
+      <% const totalFiles = (projects || []).reduce((s, p) => s + (p.uploadedFiles ? p.uploadedFiles.length : 0), 0); %>
+
+      <!-- Gallery section -->
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="hidden lg:block text-sm font-semibold text-white">Gallery</h2>
+        <% if (projects && projects.length > 0) { %>
+        <div class="flex items-center gap-4 text-[11px] font-semibold uppercase tracking-widest">
+          <span class="text-gray-400"><%= projects.length %> project<%= projects.length !== 1 ? 's' : '' %></span>
+          <span class="text-gray-400"><%= totalFiles %> file<%= totalFiles !== 1 ? 's' : '' %></span>
+        </div>
+        <% } %>
+      </div>
 
       <% if (!projects || projects.length === 0) { %>
-      <div class="text-center py-20 border border-white/5 rounded-md bg-white/1">
+      <div class="text-center py-20 border border-white/5 rounded-lg bg-white/1">
         <div class="w-11 h-11 rounded-md bg-white/3 border border-white/8 flex items-center justify-center mx-auto mb-4">
           <iconify-icon icon="material-symbols-light:photo-library" width="22" height="22" class="text-gray-700"></iconify-icon>
         </div>
@@ -282,52 +314,47 @@
 
       <% } else { %>
 
-      <!-- Filters + Sort -->
-      <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center gap-1.5 flex-wrap">
-          <button data-type-filter="all" class="filter-btn active" onclick="applyFilter('all')">All</button>
-          <button data-type-filter="video" class="filter-btn" onclick="applyFilter('video')">
-            <iconify-icon icon="material-symbols-light:videocam" width="13" height="13"></iconify-icon>
-            Video
+      <!-- Filter -->
+      <div class="mb-6">
+        <div class="relative flex-shrink-0" id="filetype-dropdown">
+          <button type="button" id="filetype-btn" onclick="toggleFiletypeDropdown()"
+            class="flex items-center gap-2 bg-white/[0.04] border border-white/10 rounded-md px-4 py-2.5 text-sm text-gray-300 hover:border-white/20 hover:text-white transition-colors whitespace-nowrap">
+            <iconify-icon id="filetype-icon" icon="material-symbols-light:select-all" width="15" height="15"></iconify-icon>
+            <span id="filetype-label">All</span>
+            <svg id="filetype-chevron" class="w-3.5 h-3.5 text-gray-500 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
-          <button data-type-filter="audio" class="filter-btn" onclick="applyFilter('audio')">
-            <iconify-icon icon="material-symbols-light:music-note" width="13" height="13"></iconify-icon>
-            Audio
-          </button>
-          <button data-type-filter="image" class="filter-btn" onclick="applyFilter('image')">
-            <iconify-icon icon="material-symbols-light:image" width="13" height="13"></iconify-icon>
-            Image
-          </button>
-          <button data-type-filter="other" class="filter-btn" onclick="applyFilter('other')">
-            <iconify-icon icon="material-symbols-light:attach-file" width="13" height="13"></iconify-icon>
-            Other
-          </button>
-        </div>
-        <div class="flex items-center gap-0.5 text-gray-700">
-          <span class="text-xs mr-1.5">Sort:</span>
-          <a href="/dashboard/gallery?sort=newest" class="sort-btn <%= sort === 'newest' ? 'active' : '' %>">Newest</a>
-          <span class="text-gray-800">·</span>
-          <a href="/dashboard/gallery?sort=oldest" class="sort-btn <%= sort === 'oldest' ? 'active' : '' %>">Oldest</a>
+          <div id="filetype-menu"
+            class="hidden absolute left-0 top-full mt-1.5 z-50 min-w-[160px] bg-[#111] border border-white/10 rounded-md overflow-hidden shadow-xl">
+            <button type="button" class="filetype-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-white hover:bg-white/[0.05] hover:text-white transition-colors" data-value="all" data-icon="material-symbols-light:select-all" onclick="applyFilter(this)">
+              <iconify-icon icon="material-symbols-light:select-all" width="15" height="15"></iconify-icon> All
+            </button>
+            <button type="button" class="filetype-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors" data-value="video" data-icon="material-symbols-light:videocam" onclick="applyFilter(this)">
+              <iconify-icon icon="material-symbols-light:videocam" width="15" height="15"></iconify-icon> Video
+            </button>
+            <button type="button" class="filetype-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors" data-value="audio" data-icon="material-symbols-light:music-note" onclick="applyFilter(this)">
+              <iconify-icon icon="material-symbols-light:music-note" width="15" height="15"></iconify-icon> Audio
+            </button>
+            <button type="button" class="filetype-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors" data-value="image" data-icon="material-symbols-light:image" onclick="applyFilter(this)">
+              <iconify-icon icon="material-symbols-light:image" width="15" height="15"></iconify-icon> Image
+            </button>
+            <button type="button" class="filetype-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors" data-value="other" data-icon="material-symbols-light:attach-file" onclick="applyFilter(this)">
+              <iconify-icon icon="material-symbols-light:attach-file" width="15" height="15"></iconify-icon> Other
+            </button>
+          </div>
         </div>
       </div>
 
       <!-- Card grid -->
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;" id="project-grid">
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3" id="project-grid">
         <% projects.forEach((project, i) => {
           const firstVideo = project.uploadedFiles.find(f => /^video\//i.test(f.mimetype));
           const otherFiles = project.uploadedFiles.filter(f => f !== firstVideo);
           const l2Show   = otherFiles.length > 8 ? otherFiles.slice(0, 3) : otherFiles;
           const l2More   = otherFiles.length > 8 ? otherFiles.length - 3 : 0;
-          const fileTypeSet = new Set(project.uploadedFiles.map(f =>
-            /^video\//i.test(f.mimetype) ? 'video' :
-            /^audio\//i.test(f.mimetype) ? 'audio' :
-            /^image\//i.test(f.mimetype) ? 'image' : 'other'
-          ));
           const dateStr = new Date(project.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         %>
         <div class="project-card"
           data-index="<%= i %>"
-          data-types="<%= [...fileTypeSet].join(',') %>"
           onclick="openModal(<%= i %>)">
 
           <!-- Level 1: main visual -->
@@ -379,6 +406,34 @@
         </div>
         <% }) %>
       </div>
+
+      <!-- Flat file grid — shown instead of the project grid when a specific type is selected -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3" id="file-grid-flat" style="display:none;">
+        <% projects.forEach((project, pi) => {
+          project.uploadedFiles.forEach((f, fi) => {
+            const type = /^video\//i.test(f.mimetype) ? 'video' : /^audio\//i.test(f.mimetype) ? 'audio' : /^image\//i.test(f.mimetype) ? 'image' : 'other';
+            const url  = '/dashboard/uploads/' + f.storedName;
+        %>
+        <div class="file-tile" data-file-type="<%= type %>" onclick="openModal(<%= pi %>, <%= fi %>)">
+          <div class="file-tile-media">
+            <% if (type === 'video') { %>
+            <video src="<%= url %>" muted preload="auto" class="gallery-thumb-vid"></video>
+            <% } else if (type === 'image') { %>
+            <img src="<%= url %>" alt="" />
+            <% } else if (type === 'audio') { %>
+            <div class="file-tile-placeholder"><iconify-icon icon="material-symbols-light:music-note-2" width="28" height="28" style="color:#f59e0b;"></iconify-icon></div>
+            <% } else { %>
+            <div class="file-tile-placeholder"><iconify-icon icon="material-symbols-light:attach-file" width="28" height="28" style="color:#6b7280;"></iconify-icon></div>
+            <% } %>
+          </div>
+          <div class="file-tile-caption">
+            <p class="file-tile-name"><%= f.originalName %></p>
+            <p class="file-tile-code"><%= project.crCode %></p>
+          </div>
+        </div>
+        <% }) }) %>
+      </div>
+      <p class="hidden text-gray-600 text-sm text-center py-16" id="file-grid-empty">No files of this type yet.</p>
 
       <% } %>
 
@@ -435,7 +490,6 @@
     })),
   }))) %>;
 
-  let activeFilter = 'all';
   let modalProject = null;
   let modalFileIdx = null;
 
@@ -451,7 +505,7 @@
   }
 
   // ── Modal ──────────────────────────────────────────────
-  function openModal(index) {
+  function openModal(index, fileIdx) {
     const p = PROJECTS[index];
     modalProject = p;
 
@@ -488,8 +542,12 @@
         const seek = () => { if (v.currentTime === 0) v.currentTime = 0.1; };
         if (v.readyState >= 2) seek(); else v.addEventListener('loadeddata', seek, { once: true });
       });
-      const firstVid = p.files.findIndex(f => fileType(f.mimetype) === 'video');
-      selectModalFile(firstVid >= 0 ? firstVid : 0);
+      if (fileIdx != null) {
+        selectModalFile(fileIdx);
+      } else {
+        const firstVid = p.files.findIndex(f => fileType(f.mimetype) === 'video');
+        selectModalFile(firstVid >= 0 ? firstVid : 0);
+      }
     }, 50);
   }
 
@@ -547,15 +605,57 @@
   }
 
   // ── Filter ─────────────────────────────────────────────
-  function applyFilter(type) {
-    activeFilter = type;
-    document.querySelectorAll('[data-type-filter]').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.typeFilter === type);
+  const FILTER_LABELS = { all: 'All', video: 'Video', audio: 'Audio', image: 'Image', other: 'Other' };
+
+  function toggleFiletypeDropdown() {
+    const menu = document.getElementById('filetype-menu');
+    const chevron = document.getElementById('filetype-chevron');
+    const open = !menu.classList.contains('hidden');
+    menu.classList.toggle('hidden', open);
+    chevron.style.transform = open ? '' : 'rotate(180deg)';
+  }
+
+  document.addEventListener('click', e => {
+    if (!document.getElementById('filetype-dropdown').contains(e.target)) {
+      document.getElementById('filetype-menu').classList.add('hidden');
+      document.getElementById('filetype-chevron').style.transform = '';
+    }
+  });
+
+  function applyFilter(btn) {
+    const type = btn.dataset.value;
+
+    document.getElementById('filetype-icon').setAttribute('icon', btn.dataset.icon);
+    document.getElementById('filetype-label').textContent = FILTER_LABELS[type];
+    document.querySelectorAll('.filetype-option').forEach(b => {
+      b.classList.toggle('text-white', b === btn);
+      b.classList.toggle('text-gray-400', b !== btn);
     });
-    document.querySelectorAll('.project-card').forEach(card => {
-      const types = (card.dataset.types || '').split(',');
-      card.style.display = (type === 'all' || types.includes(type)) ? '' : 'none';
+    document.getElementById('filetype-menu').classList.add('hidden');
+    document.getElementById('filetype-chevron').style.transform = '';
+
+    const projectGrid = document.getElementById('project-grid');
+    const fileGrid    = document.getElementById('file-grid-flat');
+    const emptyMsg    = document.getElementById('file-grid-empty');
+
+    if (type === 'all') {
+      projectGrid.style.display = '';
+      fileGrid.style.display = 'none';
+      emptyMsg.classList.add('hidden');
+      return;
+    }
+
+    projectGrid.style.display = 'none';
+    fileGrid.style.display = 'grid';
+
+    let visibleCount = 0;
+    document.querySelectorAll('.file-tile').forEach(tile => {
+      const match = tile.dataset.fileType === type;
+      tile.style.display = match ? '' : 'none';
+      if (match) visibleCount++;
     });
+    emptyMsg.classList.toggle('hidden', visibleCount > 0);
+    fileGrid.style.display = visibleCount > 0 ? 'grid' : 'none';
   }
 
   function toggleSidebar() {

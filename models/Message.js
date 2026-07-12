@@ -22,6 +22,14 @@ const messageSchema = new mongoose.Schema(
     attachments: [attachmentFields],
     read: { type: Boolean, default: false },
     deleted: { type: Boolean, default: false },
+    // Frozen at send time (not a live-populated ref) so a later edit/delete of the original
+    // doesn't retroactively change what an existing reply shows — see buildReplySnapshot in server.js.
+    replyTo: {
+      messageId: { type: mongoose.Schema.Types.ObjectId },
+      senderRole: { type: String, enum: ["admin", "client"] },
+      body: { type: String },
+      attachmentSummary: { type: String },
+    },
   },
   { timestamps: true }
 );

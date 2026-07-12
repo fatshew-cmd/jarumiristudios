@@ -605,6 +605,22 @@ async function softDeleteMessage(message) {
   await message.save();
 }
 
+// Snapshots the message being replied to at send time (not a live ref) so a later edit/delete of
+// the original doesn't retroactively change what an existing reply shows. Returns undefined if no
+// replyToMessageId was given, it doesn't belong to this booking, or it's already deleted.
+async function buildReplySnapshot(bookingId, replyToMessageId) {
+  if (!replyToMessageId) return undefined;
+  const original = await Message.findOne({ _id: replyToMessageId, bookingId }).select("senderRole body deleted attachment attachments");
+  if (!original || original.deleted) return undefined;
+  const atts = messageAttachments(original);
+  return {
+    messageId: original._id,
+    senderRole: original.senderRole,
+    body: original.body || "",
+    attachmentSummary: atts.length ? (atts.length === 1 ? atts[0].originalName : atts.length + " files") : "",
+  };
+}
+
 // Builds a chat attachment that references an already-uploaded project file instead of a fresh
 // composer upload, so tagging a file in chat doesn't duplicate it on disk. Returns null if the
 // file doesn't exist on the booking, or (for clients) if it's a deliverable that isn't unlocked yet.
@@ -1870,6 +1886,8 @@ app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => 
 
   if (!body && attachments.length === 0) return res.status(400).json({ error: "Message can't be empty." });
 
+  const replyTo = await buildReplySnapshot(req.params.id, req.body.replyToMessageId);
+
   const message = await Message.create({
     bookingId: req.params.id,
     crCode: req.booking.crCode,
@@ -1877,6 +1895,7 @@ app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => 
     senderRole: "admin",
     body,
     attachments,
+    replyTo,
   });
 
   // chatBlocked rides along so the client's page can reconcile its composer lock state against
@@ -2932,6 +2951,8 @@ app.post("/associate/booking/:id/messages", requireAssociate, requireAssignedBoo
 
   if (!body && attachments.length === 0) return res.status(400).json({ error: "Message can't be empty." });
 
+  const replyTo = await buildReplySnapshot(req.params.id, req.body.replyToMessageId);
+
   const message = await Message.create({
     bookingId: req.params.id,
     crCode: booking.crCode,
@@ -2939,6 +2960,7 @@ app.post("/associate/booking/:id/messages", requireAssociate, requireAssignedBoo
     senderRole: "admin",
     body,
     attachments,
+    replyTo,
   });
 
   const payload = message.toObject();
@@ -3104,6 +3126,8 @@ app.post("/dashboard/messages/:id", requireClient, attachCrCodeForClient, (req, 
 
   if (!body && attachments.length === 0) return res.status(400).json({ error: "Message can't be empty." });
 
+  const replyTo = await buildReplySnapshot(req.params.id, req.body.replyToMessageId);
+
   const message = await Message.create({
     bookingId: req.params.id,
     crCode: req.booking.crCode,
@@ -3111,6 +3135,7 @@ app.post("/dashboard/messages/:id", requireClient, attachCrCodeForClient, (req, 
     senderRole: "client",
     body,
     attachments,
+    replyTo,
   });
 
   const payload = message.toObject();
@@ -3207,15 +3232,14 @@ app.post("/api/notifications/mark-read", requireClient, async (req, res) => {
 });
 
 app.get("/dashboard/gallery", requireClient, async (req, res) => {
-  const sortDir = req.query.sort === "oldest" ? 1 : -1;
   const user = await User.findById(req.session.userId).populate({
     path: "bookings",
     select: "crCode serviceType pricingTier status createdAt uploadedFiles",
-    options: { sort: { createdAt: sortDir } },
+    options: { sort: { createdAt: -1 } },
   });
   if (!user) { req.session.destroy(() => res.redirect("/login")); return; }
   const projects = (user.bookings || []).filter(b => b.uploadedFiles && b.uploadedFiles.length > 0);
-  res.render("dashboard-gallery", { projects, sort: req.query.sort || "newest" });
+  res.render("dashboard-gallery", { projects });
 });
 
 app.get("/dashboard/uploads/:filename", requireClient, async (req, res) => {
