@@ -10,8 +10,8 @@
 | `/hire` | Request Form | Name, location, email, client type (Independent Creator/Agency/Studio/Brand-Business/Other, required), 1–3 required external platform links (Instagram/Twitter/TikTok/OnlyFans/Fansly/Fanview/MannyVids/Pornhub/Other), services, pricing tier + add-ons, coupon codes (up to 3, stackable/compounding), project brief, media links (only shown once upload-trusted), direct file upload gated on `hasTrustedDepositHistory` (a prior paid booking) — untrusted first-time clients submit with no direct upload at all, large files go through Messages post-signup instead. Client type and platform links are editable widgets for guests, but for a logged-in client who's already saved them to their `User` account (see `/dashboard/account`) they're carried through as locked hidden inputs instead of re-asked |
 | `GET /hire/success` | Post-submit | Shown to guests after submitting; offers inline account creation to track the booking going forward |
 | `POST /hire/coupon/validate` | — | AJAX coupon validation for the `/hire` form |
-| `POST /signup` | — | Inline signup from `/hire/success` — creates a `User`, links the just-submitted booking via `crCode`, logs in |
-| `/track` | Project Tracker | Look up a booking by BR code or name + email combo; shows deposit due date notice while `depositStatus` is `pending`, estimated delivery date once admin sets it, and final deliverable downloads once `status === "completed"` |
+| `POST /signup` | — | Inline signup, embedded on both `/hire/success` and `/track` (2026-07-11, uncommitted) — creates a `User`, links the relevant booking via `crCode`, logs in; redirects back to whichever page it was submitted from via a whitelisted `returnTo` field |
+| `/track` | Project Tracker | Look up a booking by BR code or name + email combo; shows deposit due date notice while `depositStatus` is `pending`, estimated delivery date once admin sets it, and final deliverable downloads once `status === "completed"`. An unlinked booking (no `clientId`) also shows an account nudge (2026-07-11, uncommitted) — inline signup, or a "log in to link" prompt if an account already exists for that email |
 | `GET /track/:crCode/deliverables/:filename` | — | Public deliverable download — no session, gated on `status === "completed"` and the file belonging to that `crCode` (same trust model as the rest of `/track`: the BR code is the bearer token) |
 | `/login` | Client Login | Existing client login; supports `?next=` redirect and `?cr=` to link a just-submitted booking on login |
 | `/forgot-password` | Forgot Password | Requests a reset link by email; always renders the same neutral "submitted" response regardless of whether the email matches an account, to avoid leaking account existence |
@@ -123,7 +123,7 @@ Landing (#pricing) → /hire → Submit request (guest or logged-in client)
            (status no longer auto-advances on payment); admin can now set a delivery date
            (shown on /track) — status is gated: forward moves capped at one step at a time
              — if unpaid past the due date, an hourly job (lib/invoiceExpiry.js) auto-declines
-               the booking, voids the invoice, and emails client + admin instead
+               the booking, voids the invoice, archives it, and emails client + admin instead
                        ↓
            Admin does the work → client may request revisions from /dashboard/booking/:id
                        ↓
@@ -131,6 +131,8 @@ Landing (#pricing) → /hire → Submit request (guest or logged-in client)
              — if unpaid past that date, the same hourly job voids the invoice, resets
                finalPaymentStatus so a fresh one can be sent, and emails client + admin
                (status is left alone — project isn't declined, just unpaid)
+             — if still no fresh final invoice 3 days after that (2026-07-11, uncommitted),
+               the project is auto-archived the same way, with its own client + admin email
                        ↓
            Client pays final (Stripe webhook) → status → completed
                        ↓

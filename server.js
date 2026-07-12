@@ -25,7 +25,7 @@ const Application = require("./models/Application");
 const Associate = require("./models/Associate");
 const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAdminNewApplicationAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert, sendAdminPauseAlert, sendAdminUnexpectedPaymentAlert, sendPasswordResetEmail } = require("./lib/mailer");
 const { startInvoiceExpiryJob } = require("./lib/invoiceExpiry");
-const { fileTypeFromMime, uniqueFilename } = require("./lib/uploadUtils");
+const { fileTypeFromMime, uniqueFilename, archiveBookingFolder } = require("./lib/uploadUtils");
 const { createR2Storage } = require("./lib/r2MulterStorage");
 const { getPresignedDownloadUrl, deleteObject, deleteObjectsByPrefixExcept } = require("./lib/r2");
 
@@ -375,9 +375,12 @@ const GUEST_SUBMISSION_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 // Guests (no account) get 1 /hire submission per rolling 24h, keyed on the visitor
 // cookie above — runs before preCrCode/multer so an over-quota guest costs nothing
-// (no BR code generated, no bytes uploaded, nothing to clean up).
+// (no BR code generated, no bytes uploaded, nothing to clean up). A guest recognized
+// as a returning client (see hasCompletedProjectHistory) is exempt, same as an account
+// holder — they've already proven they won't just dump storage and vanish.
 async function enforceGuestSubmissionQuota(req, res, next) {
   if (req.session.userId) return next();
+  if (await hasCompletedProjectHistory(null, req.visitorId)) return next();
   const since = new Date(Date.now() - GUEST_SUBMISSION_WINDOW_MS);
   const recent = await BookingRequest.exists({ visitorId: req.visitorId, createdAt: { $gte: since } });
   if (recent) {
@@ -392,12 +395,18 @@ async function enforceGuestSubmissionQuota(req, res, next) {
 }
 
 // Raw-file uploads at initial submission are reserved for clients with a proven track
-// record (a past booking that actually paid a deposit) — everyone else, including guests
-// (who have no durable identity to build that record on), submits brief + links only and
-// gets file access once a human has reviewed the request (see FILE_ADD_ALLOWED_STATUSES).
-async function hasTrustedDepositHistory(userId) {
-  if (!userId) return false;
-  return BookingRequest.exists({ clientId: userId, depositStatus: "paid" });
+// record — at least one past booking that actually reached "completed" (a paid deposit
+// isn't enough on its own; a paid-but-abandoned project still sat on storage). Checked
+// two ways — by account id and by the long-lived visitor cookie — so an anonymous repeat
+// client earns the same trust as an account holder without ever signing up. Everyone else
+// submits brief + links only and gets file access once a human has reviewed the request
+// (see FILE_ADD_ALLOWED_STATUSES).
+async function hasCompletedProjectHistory(userId, visitorId) {
+  const clauses = [];
+  if (userId) clauses.push({ clientId: userId });
+  if (visitorId) clauses.push({ visitorId });
+  if (!clauses.length) return false;
+  return BookingRequest.exists({ $or: clauses, status: "completed" });
 }
 
 // Pulls every still-anonymous booking under this account's email into the account —
@@ -821,6 +830,17 @@ app.get("/career", async (req, res) => {
   res.render("career", { roles });
 });
 
+const TRACK_SELECT_FIELDS = "crCode name email clientId serviceType pricingTier budget status archived filesDeleted depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate deliverableFiles createdAt";
+
+// Anonymous clients have no dashboard to remind them a project moved forward — /track is the
+// only place they'll ever look it up again, so it's also the only place we can nudge them
+// toward an account (durable identity) instead of relying solely on the visitor cookie, which
+// a cleared cache or new device would silently reset (see hasCompletedProjectHistory).
+async function trackAccountNudge(booking) {
+  if (!booking || booking.clientId) return {};
+  return { hasAccount: await User.exists({ email: booking.email }) };
+}
+
 app.get("/track", async (req, res) => {
   const { code, name, email } = req.query;
 
@@ -830,13 +850,15 @@ app.get("/track", async (req, res) => {
     const booking = await BookingRequest.findOne({
       name: { $regex: new RegExp(`^${name?.trim()}$`, "i") },
       email: email?.trim().toLowerCase(),
-    }).select("crCode name serviceType pricingTier budget status archived filesDeleted depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate deliverableFiles createdAt");
-    return res.render("track", { searched: true, method: "identity", name: name?.trim(), email: email?.trim(), booking });
+    }).select(TRACK_SELECT_FIELDS);
+    const nudge = await trackAccountNudge(booking);
+    return res.render("track", { searched: true, method: "identity", name: name?.trim(), email: email?.trim(), booking, ...nudge });
   }
 
   const booking = await BookingRequest.findOne({ crCode: code.toUpperCase().trim() })
-    .select("crCode name serviceType pricingTier budget status archived filesDeleted depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate deliverableFiles createdAt");
-  res.render("track", { searched: true, method: "code", code: code.toUpperCase().trim(), booking });
+    .select(TRACK_SELECT_FIELDS);
+  const nudge = await trackAccountNudge(booking);
+  res.render("track", { searched: true, method: "code", code: code.toUpperCase().trim(), booking, ...nudge });
 });
 
 // Smart link used in emails: sends the client to their project page if
@@ -851,13 +873,16 @@ app.get("/go/:crCode", async (req, res) => {
 });
 
 app.get("/hire", async (req, res) => {
-  if (!req.session.userId) return res.render("hire", { canUploadNow: false });
+  if (!req.session.userId) {
+    const canUploadNow = await hasCompletedProjectHistory(null, req.visitorId);
+    return res.render("hire", { canUploadNow });
+  }
   const user = await User.findById(req.session.userId);
   const [lastBooking, canUploadNow] = await Promise.all([
     user?.bookings?.length
       ? BookingRequest.findOne({ clientId: req.session.userId }).sort({ createdAt: -1 }).select("name location clientType platforms")
       : null,
-    hasTrustedDepositHistory(req.session.userId),
+    hasCompletedProjectHistory(req.session.userId, req.visitorId),
   ]);
   res.render("hire", {
     loggedInUser: { email: user.email },
@@ -907,7 +932,7 @@ app.post("/hire/coupon/validate", async (req, res) => {
 });
 
 app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next) => {
-  const canUploadNow = await hasTrustedDepositHistory(req.session.userId);
+  const canUploadNow = await hasCompletedProjectHistory(req.session.userId, req.visitorId);
   req.canUploadNow = canUploadNow;
   const maxFiles = canUploadNow ? MEMBER_MAX_FILES : 0;
   upload.array("files", maxFiles)(req, res, (err) => {
@@ -917,7 +942,7 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
       : err.code === "LIMIT_UNEXPECTED_FILE"
       ? canUploadNow
         ? "You can upload up to 20 files at a time."
-        : "File uploads open for first-time clients once their request has been approved."
+        : "Uploads open once you've completed a project with us before, or once this request has been approved."
       : err.message || "Upload failed.";
     return res.render("hire", { error: message, formData: req.body, loggedInUser: null, lastBooking: null, canUploadNow });
   });
@@ -1163,12 +1188,22 @@ app.get("/logout", (req, res) => {
   req.session.destroy(() => res.redirect("/login"));
 });
 
+// The signup form is embedded on both /hire/success (right after submission) and /track
+// (looking up an existing anonymous booking) — on failure we redirect back to wherever the
+// form was actually submitted from rather than always assuming /hire/success. Whitelisted to
+// those two known callers (rather than trusting the raw path) since returnTo is client-supplied.
+function safeSignupReturnTo(returnTo, crCode) {
+  if (returnTo === "track" && crCode) return `/track?code=${encodeURIComponent(crCode)}`;
+  return `/hire/success?cr=${crCode}`;
+}
+
 app.post("/signup", async (req, res) => {
-  const { email, password, crCode } = req.body;
+  const { email, password, crCode, returnTo } = req.body;
   const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const backTo = () => safeSignupReturnTo(returnTo, crCode);
 
   if (!email || !emailRe.test(email) || !password || password.length < 8) {
-    return res.redirect(`/hire/success?cr=${crCode}`);
+    return res.redirect(backTo());
   }
 
   const booking = await BookingRequest.findOne({ crCode: crCode?.toUpperCase().trim() });
@@ -1190,11 +1225,11 @@ app.post("/signup", async (req, res) => {
     res.redirect("/dashboard");
   } catch (err) {
     if (err.code === 11000) {
-      // Email already taken — send back to success page with error hint
-      return res.redirect(`/hire/success?cr=${crCode}`);
+      // Email already taken — send back to the originating page with an error hint
+      return res.redirect(backTo());
     }
     console.error("Signup error:", err);
-    res.redirect(`/hire/success?cr=${crCode}`);
+    res.redirect(backTo());
   }
 });
 
@@ -1374,7 +1409,7 @@ app.get("/dashboard/new", requireClient, async (req, res) => {
   }
   const profileComplete = !!(user.name?.trim() && user.location?.trim() && user.platforms?.length && user.clientType?.trim());
   const [canUploadNow, lastBooking] = await Promise.all([
-    hasTrustedDepositHistory(req.session.userId),
+    hasCompletedProjectHistory(req.session.userId, req.visitorId),
     user.bookings?.length
       ? BookingRequest.findOne({ clientId: req.session.userId }).sort({ createdAt: -1 }).select("clientType platforms")
       : null,
@@ -1584,8 +1619,10 @@ app.get("/admin", requireAdmin, async (req, res) => {
     ? { archived: { $ne: true }, status: "completed" }
     : { archived: { $ne: true } };
 
+  // Status narrows within the Archived tab too (e.g. a deposit-expiry auto-decline is both
+  // declined and archived) — completedView is excluded since that tab is already status-locked.
   const statusParam = (req.query.status || "all").trim();
-  if (!archivedView && !completedView && statusParam !== "all") {
+  if (!completedView && statusParam !== "all") {
     const statuses = statusParam.split(",").filter(Boolean);
     if (statuses.length) filter.status = { $in: statuses };
   }
@@ -2426,11 +2463,7 @@ app.post("/admin/booking/:id/archive", requireAdmin, async (req, res) => {
     });
   }
   await BookingRequest.findByIdAndUpdate(req.params.id, { archived: true });
-  if (booking?.crCode) {
-    const archiveDir = path.join(__dirname, "uploads", "_archive");
-    fs.mkdirSync(archiveDir, { recursive: true });
-    fs.rename(path.join(__dirname, "uploads", booking.crCode), path.join(archiveDir, booking.crCode), () => {});
-  }
+  archiveBookingFolder(booking?.crCode);
   res.redirect("/admin");
 });
 
@@ -2449,13 +2482,7 @@ app.post("/admin/bookings/bulk-archive", requireAdmin, async (req, res) => {
       }));
     if (notifications.length) await Notification.insertMany(notifications);
     await BookingRequest.updateMany({ _id: { $in: ids } }, { archived: true });
-    const archiveDir = path.join(__dirname, "uploads", "_archive");
-    fs.mkdirSync(archiveDir, { recursive: true });
-    for (const b of bookings) {
-      if (b.crCode) {
-        fs.rename(path.join(__dirname, "uploads", b.crCode), path.join(archiveDir, b.crCode), () => {});
-      }
-    }
+    bookings.forEach((b) => archiveBookingFolder(b.crCode));
   }
   res.redirect("/admin");
 });

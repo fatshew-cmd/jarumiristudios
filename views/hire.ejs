@@ -202,7 +202,16 @@
         <a href="/#about"    class="nav-link hover:text-white transition-colors">About</a>
         <a href="/career"    class="nav-link hover:text-white transition-colors">Careers</a>
       </div>
-      <a href="/" class="text-sm font-medium text-gray-400 hover:text-white transition-colors">← Back to site</a>
+      <div class="flex items-center gap-3">
+        <a href="/login"
+           class="hidden md:inline-flex text-sm font-semibold px-5 py-3.5 rounded-full border border-white/15 text-white hover:border-white/40 transition-colors">
+          Log In
+        </a>
+        <a href="/hire"
+           class="text-sm font-semibold px-7 py-3.5 rounded-full bg-amber-400 text-black hover:bg-amber-300 transition-colors">
+          Book A Project
+        </a>
+      </div>
     </nav>
   </header>
 
@@ -743,7 +752,7 @@
               </svg>
               <div>
                 <p class="text-sm text-white font-medium mb-1">Uploads open after approval</p>
-                <p class="text-xs text-gray-400">By our policy, first-time clients can upload files once their request has been approved. We'll notify you once uploads are open for this project.</p>
+                <p class="text-xs text-gray-400">Uploads open automatically once you've completed a project with us before, or once this request has been approved. We'll notify you either way.</p>
               </div>
             </div>
             <% } %>

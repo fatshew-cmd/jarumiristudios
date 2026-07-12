@@ -15,6 +15,10 @@ const applicationSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Backs the guest-quota check (enforceApplicationSubmissionQuota in server.js), which looks
+// up a visitor's recent submissions on every application POST.
+applicationSchema.index({ visitorId: 1, createdAt: -1 });
+
 applicationSchema.pre("save", async function () {
   if (this.appCode) return;
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
