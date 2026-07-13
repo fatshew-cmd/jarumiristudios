@@ -160,7 +160,7 @@
               <%= _confirmed ? '' : '~' %>$<%= _est.toFixed(2) %>
             </span>
           <% } else { %>
-            <span class="text-gray-600">—</span>
+            <span class="text-gray-600">-</span>
           <% } %>
         </td>
         <td class="px-5 py-4">
@@ -202,15 +202,15 @@
 <% if (totalPages > 1) { %>
 <div class="flex items-center justify-between mt-6">
   <% if (page > 1) { %>
-  <a href="<%= pageUrl(page - 1) %>" class="page-link text-sm font-semibold text-gray-400 hover:text-white transition-colors px-4 py-2 rounded-lg border border-white/10 hover:border-white/25">← Previous</a>
+  <a href="<%= pageUrl(page - 1) %>" class="page-link text-sm font-semibold text-gray-400 hover:text-white transition-colors px-4 py-2 rounded-lg border border-white/10 hover:border-white/25">Previous</a>
   <% } else { %>
-  <span class="text-sm font-semibold text-gray-700 px-4 py-2 rounded-lg border border-white/5">← Previous</span>
+  <span class="text-sm font-semibold text-gray-700 px-4 py-2 rounded-lg border border-white/5">Previous</span>
   <% } %>
   <span class="text-sm text-gray-500">Page <%= page %> of <%= totalPages %></span>
   <% if (page < totalPages) { %>
-  <a href="<%= pageUrl(page + 1) %>" class="page-link text-sm font-semibold text-gray-400 hover:text-white transition-colors px-4 py-2 rounded-lg border border-white/10 hover:border-white/25">Next →</a>
+  <a href="<%= pageUrl(page + 1) %>" class="page-link text-sm font-semibold text-gray-400 hover:text-white transition-colors px-4 py-2 rounded-lg border border-white/10 hover:border-white/25">Next</a>
   <% } else { %>
-  <span class="text-sm font-semibold text-gray-700 px-4 py-2 rounded-lg border border-white/5">Next →</span>
+  <span class="text-sm font-semibold text-gray-700 px-4 py-2 rounded-lg border border-white/5">Next</span>
   <% } %>
 </div>
 <% } %>

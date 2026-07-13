@@ -370,9 +370,15 @@
                 Log in to link this booking
               </a>
             <% } else { %>
+              <% if (locals.signupDiscountPreview && signupDiscountPreview.eligible) { %>
+              <p class="text-xs font-semibold tracking-widest text-amber-400 uppercase mb-2">Get 15% off</p>
+              <h2 class="text-lg font-bold text-white mb-1">Save $<%= signupDiscountPreview.amount.toFixed(2) %> on this project</h2>
+              <p class="text-gray-400 text-sm mb-6">Sign up now and the discount is applied to this project automatically — plus track progress, message us, and manage payments in one place. Takes 10 seconds.</p>
+              <% } else { %>
               <p class="text-xs font-semibold tracking-widest text-amber-400 uppercase mb-2">Optional</p>
               <h2 class="text-lg font-bold text-white mb-1">Create a client dashboard</h2>
               <p class="text-gray-400 text-sm mb-6">Track progress, message us, and manage payments in one place — and we'll recognize you automatically on future projects. Takes 10 seconds.</p>
+              <% } %>
               <form action="/signup" method="POST" novalidate>
                 <input type="hidden" name="crCode" value="<%= booking.crCode %>" />
                 <input type="hidden" name="returnTo" value="track" />

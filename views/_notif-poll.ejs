@@ -42,7 +42,7 @@
   function buildRow(n) {
     var ic = ICONS[n.type] || { icon: 'material-symbols-light:close-small', cls: 'dismiss', color: '#f87171' };
     var viewLink = n.bookingId
-      ? '<a href="/dashboard/booking/' + n.bookingId + '" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>'
+      ? '<a href="/dashboard/booking/' + n.bookingId + '" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium inline-flex items-center gap-0.5">View project <iconify-icon icon="material-symbols-light:arrow-right-alt" width="14" height="14"></iconify-icon></a>'
       : '';
     var row = document.createElement('div');
     row.className = 'notif-row unread';

@@ -218,10 +218,10 @@
       </div>
 
       <%
-        const fmtMoney = (v) => v != null ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—';
+        const fmtMoney = (v) => v != null ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '-';
         const fmtDue = (inv) => inv.status === 'pending' && inv.dueDate
           ? new Date(inv.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-          : '—';
+          : '-';
       %>
 
       <!-- Mobile cards -->
@@ -234,7 +234,7 @@
           </div>
           <div class="flex items-center justify-between gap-2 mt-2.5 text-[13px]">
             <span class="text-gray-400"><%= inv.label %></span>
-            <span class="text-gray-500 text-xs"><%= inv.status === 'pending' ? 'Due ' + fmtDue(inv) : '—' %></span>
+            <span class="text-gray-500 text-xs"><%= inv.status === 'pending' ? 'Due ' + fmtDue(inv) : '-' %></span>
           </div>
           <div class="flex items-center justify-between gap-2 mt-3">
             <span class="text-sm font-semibold <%= inv.status === 'pending' ? 'amount-due' : 'amount-pos' %>"><%= fmtMoney(inv.amount) %></span>

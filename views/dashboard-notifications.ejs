@@ -238,7 +238,7 @@
             <div class="flex items-center gap-3 mt-1.5">
               <span class="text-xs text-gray-600"><%= timeLabel %></span>
               <% if (n.bookingId) { %>
-              <a href="/dashboard/booking/<%= n.bookingId %>" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>
+              <a href="/dashboard/booking/<%= n.bookingId %>" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium inline-flex items-center gap-0.5">View project <iconify-icon icon="material-symbols-light:arrow-right-alt" width="14" height="14"></iconify-icon></a>
               <% } %>
             </div>
           </div>

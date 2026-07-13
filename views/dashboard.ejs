@@ -284,7 +284,7 @@
           <iconify-icon icon="material-symbols-light:description" width="22" height="22" class="text-gray-700"></iconify-icon>
         </div>
         <p class="text-gray-600 text-sm mb-3">No projects yet.</p>
-        <a href="/dashboard/new" class="text-amber-400 text-sm hover:text-amber-300 transition-colors font-medium">Submit your first project →</a>
+        <a href="/dashboard/new" class="text-amber-400 text-sm hover:text-amber-300 transition-colors font-medium inline-flex items-center gap-1">Submit your first project <iconify-icon icon="material-symbols-light:arrow-right-alt" width="16" height="16"></iconify-icon></a>
       </div>
 
       <% } else { %>
@@ -303,7 +303,7 @@
           const finalPaid   = b.finalPaymentStatus === 'paid';
           const amountPaid  = price ? (depositPaid ? price * 0.30 : 0) + (finalPaid ? price * 0.70 : 0) : 0;
           const remaining   = price ? price - amountPaid : null;
-          const fmtMoney = (v) => v != null ? '$' + v.toFixed(2) : '—';
+          const fmtMoney = (v) => v != null ? '$' + v.toFixed(2) : '-';
           const canManage = !b.archived && b.status !== 'declined' && b.status !== 'completed';
           const pendingInvoiceUrl = b.depositStatus === 'pending' ? b.depositInvoiceUrl : (b.finalPaymentStatus === 'pending' ? b.finalInvoiceUrl : null);
         %>
@@ -325,9 +325,9 @@
           <!-- Row 2: est. cost, paid, due, status -->
           <div class="flex items-center justify-between gap-2 mt-3 min-h-10 text-[13px]">
             <div class="flex items-center gap-3">
-              <span class="<%= price ? 'amount-pos' : (isEstimate ? 'amount-est' : 'amount-zero') %>">Est <%= price ? fmtMoney(price) : (isEstimate ? '~' + fmtMoney(displayCost) : '—') %></span>
-              <span class="<%= amountPaid > 0 ? 'amount-pos' : 'amount-zero' %>">Paid <%= price ? fmtMoney(amountPaid) : '—' %></span>
-              <span class="<%= remaining && remaining > 0 ? 'amount-due' : 'amount-zero' %>">Due <%= remaining != null ? (remaining > 0 ? fmtMoney(remaining) : '—') : '—' %></span>
+              <span class="<%= price ? 'amount-pos' : (isEstimate ? 'amount-est' : 'amount-zero') %>">Est <%= price ? fmtMoney(price) : (isEstimate ? '~' + fmtMoney(displayCost) : '-') %></span>
+              <span class="<%= amountPaid > 0 ? 'amount-pos' : 'amount-zero' %>">Paid <%= price ? fmtMoney(amountPaid) : '-' %></span>
+              <span class="<%= remaining && remaining > 0 ? 'amount-due' : 'amount-zero' %>">Due <%= remaining != null ? (remaining > 0 ? fmtMoney(remaining) : '-') : '-' %></span>
             </div>
             <span class="status-pill status-<%= b.archived ? 'archived' : b.status %>"><%= b.archived ? 'Archived' : b.status.replace('-', '‑') %></span>
           </div>
@@ -396,7 +396,7 @@
               const finalPaid   = b.finalPaymentStatus === 'paid';
               const amountPaid  = price ? (depositPaid ? price * 0.30 : 0) + (finalPaid ? price * 0.70 : 0) : 0;
               const remaining   = price ? price - amountPaid : null;
-              const fmtMoney = (v) => v != null ? '$' + v.toFixed(2) : '—';
+              const fmtMoney = (v) => v != null ? '$' + v.toFixed(2) : '-';
               const canManage = !b.archived && b.status !== 'declined' && b.status !== 'completed';
               const pendingInvoiceUrl = b.depositStatus === 'pending' ? b.depositInvoiceUrl : (b.finalPaymentStatus === 'pending' ? b.finalInvoiceUrl : null);
             %>
@@ -440,14 +440,14 @@
               <td class="amount-cell <%= price ? 'amount-pos' : (isEstimate ? 'amount-est' : 'amount-zero') %>">
                 <% if (price) { %><%= fmtMoney(price) %>
                 <% } else if (isEstimate) { %>~<%= fmtMoney(displayCost) %>
-                <% } else { %>—<% } %>
+                <% } else { %>-<% } %>
               </td>
 
               <!-- Paid -->
-              <td class="amount-cell <%= amountPaid > 0 ? 'amount-pos' : 'amount-zero' %>"><%= price ? fmtMoney(amountPaid) : '—' %></td>
+              <td class="amount-cell <%= amountPaid > 0 ? 'amount-pos' : 'amount-zero' %>"><%= price ? fmtMoney(amountPaid) : '-' %></td>
 
               <!-- Remaining / Due -->
-              <td class="amount-cell <%= remaining && remaining > 0 ? 'amount-due' : 'amount-zero' %>"><%= remaining != null ? (remaining > 0 ? fmtMoney(remaining) : '—') : '—' %></td>
+              <td class="amount-cell <%= remaining && remaining > 0 ? 'amount-due' : 'amount-zero' %>"><%= remaining != null ? (remaining > 0 ? fmtMoney(remaining) : '-') : '-' %></td>
 
               <!-- Status -->
               <td>

@@ -538,6 +538,10 @@ function welcomeDiscountEligible(user) {
   return !!(user && user.discountPercent && user.discountExpiresAt && user.discountExpiresAt > new Date() && !user.discountUsed);
 }
 
+function calcPercentDiscount(base, percent) {
+  return Math.round(base * percent) / 100;
+}
+
 const MAX_COUPONS_PER_BOOKING = 3;
 const MAX_PLATFORM_LINKS = 3;
 const PRICING_TIERS = ["Clip", "Scene", "Feature", "Custom"];
@@ -932,7 +936,7 @@ app.get("/terms", (req, res) => {
   res.render("terms");
 });
 
-const TRACK_SELECT_FIELDS = "crCode name email clientId serviceType pricingTier budget status archived filesDeleted depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate deliverableFiles createdAt";
+const TRACK_SELECT_FIELDS = "crCode name email clientId serviceType pricingTier addOns budget status archived filesDeleted depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate deliverableFiles createdAt discountAmount agreedPrice";
 
 // Anonymous clients have no dashboard to remind them a project moved forward — /track is the
 // only place they'll ever look it up again, so it's also the only place we can nudge them
@@ -940,7 +944,23 @@ const TRACK_SELECT_FIELDS = "crCode name email clientId serviceType pricingTier 
 // a cleared cache or new device would silently reset (see hasCompletedProjectHistory).
 async function trackAccountNudge(booking) {
   if (!booking || booking.clientId) return {};
-  return { hasAccount: await User.exists({ email: booking.email }) };
+  const hasAccount = await User.exists({ email: booking.email });
+
+  // Same eligibility/amount logic as GET /hire/success and POST /signup, so the offer shown
+  // here matches what signing up would actually apply to this booking.
+  let signupDiscountPreview = { eligible: false, amount: 0 };
+  if (!hasAccount) {
+    const returningEmail = await BookingRequest.exists({ email: booking.email, clientId: { $ne: null }, _id: { $ne: booking._id } });
+    const retroactiveEligible = !returningEmail && !booking.agreedPrice && !["declined", "completed"].includes(booking.status);
+    if (retroactiveEligible) {
+      const subtotal = (TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
+      const running = subtotal - (booking.discountAmount || 0);
+      const amount = calcPercentDiscount(running, SIGNUP_DISCOUNT_PERCENT);
+      if (amount > 0) signupDiscountPreview = { eligible: true, amount };
+    }
+  }
+
+  return { hasAccount, signupDiscountPreview };
 }
 
 app.get("/track", async (req, res) => {
@@ -1000,10 +1020,26 @@ app.get("/hire", async (req, res) => {
 app.get("/hire/success", async (req, res) => {
   const { cr } = req.query;
   if (!cr) return res.redirect("/hire");
-  const booking = await BookingRequest.findOne({ crCode: cr }).select("email clientId pricingTier addOns couponCodes discountAmount");
+  const booking = await BookingRequest.findOne({ crCode: cr }).select("email clientId pricingTier addOns couponCodes discountAmount status agreedPrice");
   if (!booking) return res.redirect("/hire");
   const alreadyLinked = !!booking.clientId;
   const existingUser = !alreadyLinked && await User.exists({ email: booking.email });
+
+  // Preview of the signup-discount offer for the "create an account" card below — mirrors the
+  // same eligibility/amount logic POST /signup actually applies, so the promise made here matches
+  // what the client will really get.
+  let signupDiscountPreview = { eligible: false, amount: 0 };
+  if (!alreadyLinked && !existingUser) {
+    const returningEmail = await BookingRequest.exists({ email: booking.email, clientId: { $ne: null }, _id: { $ne: booking._id } });
+    const retroactiveEligible = !returningEmail && !booking.agreedPrice && !["declined", "completed"].includes(booking.status);
+    if (retroactiveEligible) {
+      const subtotal = (TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
+      const running = subtotal - (booking.discountAmount || 0);
+      const amount = calcPercentDiscount(running, SIGNUP_DISCOUNT_PERCENT);
+      if (amount > 0) signupDiscountPreview = { eligible: true, amount };
+    }
+  }
+
   res.render("hire", {
     success: true,
     crCode: cr,
@@ -1014,6 +1050,7 @@ app.get("/hire/success", async (req, res) => {
     addOns: booking.addOns || [],
     couponCodes: booking.couponCodes || [],
     discountAmount: booking.discountAmount || 0,
+    signupDiscountPreview,
   });
 });
 
@@ -1138,7 +1175,7 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
         const coupon = await Coupon.findOne({ code: rawCode, active: true });
         if (!coupon || (coupon.expiresAt && new Date() > coupon.expiresAt)) continue;
         const amount = coupon.discountType === "percent"
-          ? Math.round(running * coupon.discountValue) / 100
+          ? calcPercentDiscount(running, coupon.discountValue)
           : Math.min(coupon.discountValue, running);
         couponCodes.push({ code: coupon.code, discountType: coupon.discountType, discountValue: coupon.discountValue, amount });
         discountAmount += amount;
@@ -1152,7 +1189,7 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
     // wasted for no benefit.
     const claimedDiscount = await discountClaimPromise;
     if (claimedDiscount) {
-      const amount = Math.round(running * claimedDiscount.discountPercent) / 100;
+      const amount = calcPercentDiscount(running, claimedDiscount.discountPercent);
       if (amount > 0) {
         couponCodes.push({ code: SIGNUP_DISCOUNT_CODE, discountType: "percent", discountValue: claimedDiscount.discountPercent, amount });
         discountAmount += amount;
@@ -1369,6 +1406,26 @@ app.post("/signup", async (req, res) => {
       _id: { $ne: booking._id },
     });
 
+    // If the triggering booking hasn't been priced yet, apply the discount to it directly instead
+    // of leaving it for a future booking — this is what actually makes it an acquisition incentive
+    // ("sign up now and get 15% off this project") rather than a reward discovered later. Once a
+    // booking has an agreedPrice, editing couponCodes/discountAmount has zero real billing effect
+    // (Stripe invoices are keyed off agreedPrice alone — see createDepositInvoice), so that's the
+    // natural, abuse-proof cutoff: nobody can sign up right before paying to shave off 15%.
+    const retroactiveEligible = !returningEmail && !booking.agreedPrice && !["declined", "completed"].includes(booking.status);
+    let discountAppliedRetroactively = false;
+
+    if (retroactiveEligible) {
+      const subtotal = (TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
+      const running = subtotal - (booking.discountAmount || 0);
+      const amount = calcPercentDiscount(running, SIGNUP_DISCOUNT_PERCENT);
+      if (amount > 0) {
+        booking.couponCodes.push({ code: SIGNUP_DISCOUNT_CODE, discountType: "percent", discountValue: SIGNUP_DISCOUNT_PERCENT, amount });
+        booking.discountAmount = (booking.discountAmount || 0) + amount;
+        discountAppliedRetroactively = true;
+      }
+    }
+
     const user = new User({
       email: normalizedEmail,
       password,
@@ -1379,6 +1436,7 @@ app.post("/signup", async (req, res) => {
       ...(returningEmail ? {} : {
         discountPercent: SIGNUP_DISCOUNT_PERCENT,
         discountExpiresAt: new Date(Date.now() + SIGNUP_DISCOUNT_WINDOW_MS),
+        discountUsed: discountAppliedRetroactively,
       }),
     });
     await user.save();

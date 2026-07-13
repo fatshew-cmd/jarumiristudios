@@ -1,5 +1,59 @@
 # Journal
 
+## 2026-07-12 — Retroactive Signup Discount Application, Pre-Signup Incentive Cards, UI Polish Pass
+
+**What was built:** Uncommitted, two batches bundled in one working session — a follow-up to the signup welcome discount (`ce11320`/`4db3d62`, both below) and a cosmetic pass across the public/dashboard/admin/associate views.
+
+- **Retroactive discount application.** The welcome discount previously only applied to a booking submitted *after* signup (i.e. you needed an account already to see it auto-apply on `/hire`). Now `POST /signup` — called from both `/hire/success` and `/track`'s inline signup form — applies the 15% discount directly to the triggering booking at signup time if it's still eligible (`retroactiveEligible`: no returning-email match, `!booking.agreedPrice` — admin hasn't priced it yet — and not `declined`/`completed`). This is what actually makes it an acquisition incentive ("sign up now, save 15% on *this* project") rather than only a reward discovered on some hypothetical next one. Once a booking has `agreedPrice` set, editing `couponCodes`/`discountAmount` has zero real billing effect (Stripe invoices are keyed off `agreedPrice` alone), so that's the natural, abuse-proof cutoff. `User.discountUsed` is set `true` immediately when applied this way (`discountAppliedRetroactively`), so the same account can't also redeem it on a later `/hire` submission.
+- **Pre-signup preview cards.** `GET /hire/success` and `GET /track` (via `trackAccountNudge()`) now run the same eligibility/amount check ahead of time and pass a `signupDiscountPreview` (`{ eligible, amount }`) into the view — the "create an account" card swaps its generic copy for "Save $X on this project" when eligible, so the offer shown matches what signing up will actually apply (same subtotal/discountAmount math as the real `/signup` handler, factored into a shared `calcPercentDiscount(base, percent)` helper). `/hire`'s in-progress price-estimate box also gained a persistent "Get 15% off" incentive card for logged-out users, with the live-computed amount injected into `#signup-incentive-amount` alongside the existing subtotal recompute.
+- **UI polish pass**, unrelated to the discount work, across most public/dashboard/admin/associate views: arrow glyphs (`→`/`←`) stripped from button/link copy site-wide in favor of `capitalize` styling, except where an arrow still adds real affordance (view-project links, empty-state CTAs, back-links) — those got an actual `iconify-icon` glyph instead of a text arrow. `rounded-2xl`/`rounded-xl` card corners tightened to `rounded-md` in several spots (`hire.ejs`'s success-page cards, price-estimate box, identity strip). Em-dashes (`—`) used as placeholder/empty values swapped for plain hyphens (`admin/_results-table.ejs`, `dashboard.ejs`'s money columns). `hire.ejs`/`dashboard-new.ejs`'s ToS/email-consent checkboxes restyled from native checkboxes to `iconify-icon` check/uncheck glyphs toggled via a `peer`/`sr-only` pattern.
+- **Submit button gated on ToS agreement.** Both `/hire` and `/dashboard/new`'s final-step submit button now starts `disabled` and only enables once the `tosAgreed` checkbox is checked (`updateSubmitState()`), matching the server-side requirement (`4db3d62` already rejected the POST without it) with an equivalent client-side affordance instead of letting the click round-trip to a validation error.
+- **`hire.ejs`'s price-estimate box now repositions itself per step** (`placePriceEstimate()`) — it used to sit in one fixed spot in the DOM, but the new per-step `id="step-N-actions"` markup needs it to always render directly above whichever step's Back/Continue row is currently visible.
+
+**Decisions made:**
+- Retroactive-eligibility math duplicated (not factored into one shared function) across `trackAccountNudge()`, `GET /hire/success`, and `POST /signup` — each call site already has a different subset of the booking loaded/selected, and the calculation itself is three short lines built on the same `calcPercentDiscount` helper, so sharing more than that would mean passing awkward partial-booking objects around instead.
+- Arrow-to-icon swap applied selectively, not blanket-removed — links that navigate to another view (view project, back to list, empty-state CTA) kept a directional glyph since it's real affordance there, while plain step-navigation buttons (Continue, Back, Apply, Done) just lost the arrow since the button's position/label already implies direction.
+
+---
+
+## 2026-07-12 — Signup Discount Bug Fixes, Booking Consent Checkboxes, Notification Preferences, 404 Page
+
+**What was built:** Shipped in `4db3d62`, closing several correctness bugs introduced by the signup welcome discount (`ce11320`, next entry below) plus three unrelated additions bundled into the same commit.
+
+- **Signup-discount bug fixes:**
+  - **Double-apply race closed.** The discount was previously read-then-flip-later (a `User.findById` eligibility check, then a `discountUsed: true` write after the booking saved) — two concurrent submissions from the same account could both pass the read before either write landed, applying the discount twice. Now claimed atomically up front via `User.findOneAndUpdate({ discountUsed: false, ... }, { discountUsed: true })` (`discountClaimPromise`), run in parallel with the manual-coupon lookups since it doesn't depend on their result.
+  - **$0-discount burn fixed** — if the claimed discount computes to $0 (e.g. a manual coupon already zeroed the running subtotal), the claim is released (`discountUsed: false` rolled back) instead of permanently burning the one-time discount for no benefit. Same rollback added in the `catch` block if the booking save itself fails.
+  - **`WELCOME` coupon-code collision** — a manually-typed coupon code of literally `WELCOME` is now skipped (`rawCode === SIGNUP_DISCOUNT_CODE`) since that string is reserved for the auto-applied signup discount; `POST /admin/coupons` also now rejects creating a real coupon with that code.
+  - **"Coupon (WELCOME)" mislabeling** and **analytics KPI pollution** — the auto-applied discount was previously indistinguishable from a real coupon in `/admin/analytics`'s coupon-usage stats; the analytics aggregation now filters `couponCodes` down to `realCouponCodes` (excluding `code === "WELCOME"`) before computing `hasCoupon`/`totalDiscount`.
+  - **Redundant Mongo round-trips** collapsed — the eligibility check and the claim used to be two separate queries; now one `findOneAndUpdate`.
+  - **Unescaped name in the reminder email** — `sendSignupDiscountReminderEmail`'s `Hi ${user.name}` interpolation is now HTML-escaped.
+  - **Re-signup-after-deletion loophole closed.** Deleting an account (`POST /dashboard/account/delete`) hard-deletes the `User` but leaves past bookings' `clientId` intact — previously a client could delete their account and sign up again under the same email to re-earn the discount. `POST /signup` now checks `BookingRequest.exists({ email, clientId: { $ne: null }, _id: { $ne: booking._id } })` (`returningEmail`) and skips granting `discountPercent`/`discountExpiresAt` on the new `User` if any past booking under that email was ever account-linked.
+- **Booking consent checkboxes.** `/hire` and `/dashboard/new` both gained a required "I agree to the Terms of Service" checkbox (`tosAgreed`, rejected server-side alongside the existing field validation) and an optional "Send me occasional email updates" checkbox (`emailConsent`). `BookingRequest` gained `tosAgreedAt`/`emailConsent` fields recording the submission-time consent.
+- **Notification preferences.** `User.notificationPreferences.emailUpdates` (defaulted from the booking's `emailConsent` at signup time) gates non-essential reminder/status/promo emails; a new toggle on `/dashboard/account` (`POST /dashboard/account/notifications`) lets a client change it later. Transactional email (invoices, password reset, etc.) is unaffected by the flag.
+- **404 page.** A catch-all `app.use((req, res) => res.status(404).render("404"))` (registered after every real route) renders a new branded `views/404.ejs`, replacing whatever Express's default plaintext 404 was serving.
+- **Sidebar link/label text lightened** for readability on both `admin/_sidebar.ejs` and `associate/_sidebar.ejs`.
+
+**Decisions made:**
+- Discount eligibility check split into a display-only helper (`welcomeDiscountEligible()`, used just to decide what to show) vs. the atomic claim at actual booking-save time — showing the discount and consuming it are different operations, and only the consuming one needs race protection.
+- `returningEmail` keyed on "any past booking under this email was ever account-linked," not on "a `User` currently exists for this email" — the latter is trivially false right after a self-delete, which is exactly the loophole being closed.
+
+---
+
+## 2026-07-12 — Signup Welcome Discount
+
+**What was built:** Shipped in `ce11320` (bugs found and fixed the same day in `4db3d62`, previous entry above). A first-booking acquisition incentive: signing up grants a 15%-off coupon usable on the next `/hire` submission.
+
+- **`User` schema gained `discountPercent`/`discountExpiresAt`/`discountUsed`/`discountReminderSent`.** Every new signup (`POST /signup`) gets `discountPercent: 15`, `discountExpiresAt: now + 15 days`.
+- **Auto-applied on `/hire`'s POST handler** — if the logged-in account has an unused, unexpired discount, it's pushed onto `couponCodes[]` as a `WELCOME`-coded entry on top of whatever manual coupons were applied, and `discountUsed` flips `true` once the booking saves.
+- **`GET /hire` shows a "welcome discount" badge** (`welcomeDiscount: { percent }`) when eligible, both on first load and on re-render-after-a-validation-error.
+- **`lib/discountExpiry.js` (new), an hourly job** (`startDiscountExpiryJob()`, same cadence/pattern as `lib/invoiceExpiry.js`) — finds accounts with an unused discount expiring within 3 days that haven't been reminded yet, emails `sendSignupDiscountReminderEmail` and creates a `due_date_reminder` `Notification`, marking `discountReminderSent` so it only fires once per account.
+
+**Decisions made:**
+- 15% / 15-day window chosen as the initial offer parameters (`SIGNUP_DISCOUNT_PERCENT`/`SIGNUP_DISCOUNT_WINDOW_MS`) — a first-pass acquisition incentive, easy to tune later since both are top-level constants.
+- Reminder job mirrors `invoiceExpiry.js`'s existing hourly-poll-plus-flag pattern rather than a scheduled cron entry — keeps the "in-process interval job driven off Mongo-backed state" convention this codebase already uses, instead of introducing a second job-running mechanism.
+
+---
+
 ## 2026-07-12 — Dashboard Invoices Page, Notifications Search/Filter, Attachment Preview Privacy Fix
 
 **What was built:** Uncommitted, three unrelated changes bundled in one working session.

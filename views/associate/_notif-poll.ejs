@@ -35,7 +35,7 @@
   function buildRow(n) {
     var ic = ICONS[n.type] || ICONS.assignment;
     var viewIndicator = n.bookingId
-      ? '<span class="text-xs text-amber-400 font-medium">View project →</span>'
+      ? '<span class="text-xs text-amber-400 font-medium inline-flex items-center gap-0.5">View project <iconify-icon icon="material-symbols-light:arrow-right-alt" width="14" height="14"></iconify-icon></span>'
       : '';
     var row = document.createElement(n.bookingId ? 'a' : 'div');
     if (n.bookingId) row.href = '/associate/booking/' + n.bookingId;
