@@ -578,7 +578,7 @@ function addonPriceForTier(tier, addon) {
   const base = ADDON_PRICES[addon];
   if (base === undefined) return undefined;
   const multiplier = TIER_ADDON_MULTIPLIERS[tier] || 1;
-  return Math.round(base * multiplier * 100) / 100;
+  return Math.ceil(base * multiplier);
 }
 
 function addonTotalForTier(tier, addOns) {

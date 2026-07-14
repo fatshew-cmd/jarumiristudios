@@ -259,7 +259,7 @@
         const FREE_TIER_EXCLUDED_ADDONS = ['Captions', 'Intro/outro bumper', 'Extra revision'];
         const TIER_ADDON_MULTIPLIERS = { Scene: 1.5, Feature: 2.5 };
         const isAddonAllowedForTier = (tier, addon) => !(tier === 'Free' && FREE_TIER_EXCLUDED_ADDONS.includes(addon));
-        const addonPriceForTier = (tier, addon) => ADDON_PRICES[addon] === undefined ? undefined : Math.round(ADDON_PRICES[addon] * (TIER_ADDON_MULTIPLIERS[tier] || 1) * 100) / 100;
+        const addonPriceForTier = (tier, addon) => ADDON_PRICES[addon] === undefined ? undefined : Math.ceil(ADDON_PRICES[addon] * (TIER_ADDON_MULTIPLIERS[tier] || 1));
         if (booking.pricingTier !== 'Custom') {
           const tierBase = TIER_PRICES[booking.pricingTier] || 0;
           const addonSum = (booking.addOns || []).reduce((s, a) => s + (isAddonAllowedForTier(booking.pricingTier, a) ? (addonPriceForTier(booking.pricingTier, a) || 0) : 0), 0);

@@ -247,7 +247,7 @@
         const TIER_ADDON_MULTIPLIERS = { Scene: 1.5, Feature: 2.5 };
         function isAddonAllowedForTier(tier, addon) { return !(tier === 'Free' && FREE_TIER_EXCLUDED_ADDONS.includes(addon)); }
         function addonPriceForTier(tier, addon) {
-          return ADDON_PRICES[addon] === undefined ? undefined : Math.round(ADDON_PRICES[addon] * (TIER_ADDON_MULTIPLIERS[tier] || 1) * 100) / 100;
+          return ADDON_PRICES[addon] === undefined ? undefined : Math.ceil(ADDON_PRICES[addon] * (TIER_ADDON_MULTIPLIERS[tier] || 1));
         }
       %>
 
