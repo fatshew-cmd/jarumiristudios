@@ -1,5 +1,32 @@
 # Journal
 
+## 2026-07-17 — Real Logo: Favicon + OG/Twitter Image
+
+**What was built:** Client supplied a real logo (`public/assets/jarumiristudios_logo_0726.png`, 1024×1024, dark background) — dropped straight into `public/assets/`, already reachable at `/assets/jarumiristudios_logo_0726.png` since `public/` is mounted with `express.static` at the root (`server.js:235`). Used it for the two things `july26-milestone.md` had flagged as blocked on having an asset:
+
+- **Favicon** — every one of the 32 view files had its own duplicated `<link rel="icon" href="data:image/svg+xml,...">` (a 🎬 emoji), no shared head partial to edit once. Replaced all 32 via a one-off Node script doing an exact string match/replace (`rel="icon" type="image/png"` + a new `rel="apple-touch-icon"` line, both pointing at the same PNG) rather than hand-editing each file.
+- **`og:image` / `twitter:image`** — added to `index.ejs`, the only view with Open Graph/Twitter Card tags. Pointed at the absolute `https://jarumiristudios.com/...` URL (required for OG tags to work in link-unfurlers, and the domain used everywhere else in the app). While doing this, noticed the page's own `og:url` still said the stale `https://jarumiri.studio` — corrected it to `https://jarumiristudios.com` too, on request.
+
+Verified all three against the running local dev server (`curl` against `/`, `/login`, and the asset URL directly) rather than just eyeballing the diff.
+
+**Decisions made:**
+- Used the square logo as-is for the social preview image rather than waiting on a proper 1200×630 crop — `summary_large_image` cards accept square images (may letterbox on some platforms), and shipping a placeholder now beats leaving link previews text-only indefinitely.
+
+---
+
+## 2026-07-17 — Planning Docs Reconciled With Implementation (Round 2)
+
+**What was found:** Audited every commit since the last full reconciliation (`bc0ea9a`/`f512cc7`) against `pages.md`/`stack.md`/`landing-page.md` by cross-checking commit hashes against doc mentions. Most recent work was already self-documenting (commits like `257e558`, `a806f0f`, `bc0ea9a` update `Plans/` in the same commit), but two functional, undocumented-anywhere gaps turned up, both from `24a4127`/`df24aea`/`68aa4f2` (2026-07-11), which touched `server.js`/`lib/mailer.js`/views without a matching `Plans/` update:
+
+- `GET /go/:crCode` — a smart link (`codeChipLink()` in `lib/mailer.js`) used behind every BR code chip in transactional emails; routes a logged-in owning client straight to `/dashboard/booking/:id`, falls back to `/track?code=` otherwise. Replaced plain, non-clickable code chips and hardcoded `/track` links across all mailer templates. Missing from `pages.md` entirely.
+- `POST /admin/booking/:id/send-deposit` gained a second block condition undocumented in `pages.md`'s existing row: at least one uploaded file must have a `video/*` mimetype before a deposit invoice can be sent, since invoicing shouldn't fire against a project that's still just a form submission with no footage attached. A same-day follow-up (`68aa4f2`) added a client-side click guard on the "Pay deposit now" link for invoices that predate the check.
+
+Minor UI-only polish commits in the same window (toast-styled login errors, chat thread splash/header redesigns, image-viewer zoom/pan) were left undocumented on purpose — consistent with this doc set's existing grain of route/business-logic-level facts rather than pixel-level UI description, except the toast-for-login-errors detail, folded into the `/login` row since it's a one-clause addition sitting right next to the `24a4127` note anyway.
+
+**What changed:** Added the `/go/:crCode` row and the video-upload deposit gate clause to `pages.md`. No code changes.
+
+---
+
 ## 2026-07-16 — Ran R2 Folder-Reorganization Migration Against Production, Hardened Script for Missing Objects
 
 **What was built:** `scripts/reorganize-r2-folders.js` run against production with `--execute`, the last open item from `Plans/july26-milestone.md`'s R2 migration section. A dry run first found exactly one leftover flat-keyed object (a chat attachment on `Message`, booking `I07-TI2-QJK`). The real `--execute` pass failed to copy it — "the specified key does not exist" — because that booking had been client-hard-deleted (`filesDeleted: true`, `archived: true`) in the time between building the plan and executing it; the client's hard-delete flow wipes the booking's entire R2 prefix but deliberately leaves `Message.attachments[]` metadata alone (the read path already gates on `filesDeleted` to show a "no longer available" placeholder rather than serving the file). Copy-before-delete meant the failed copy aborted cleanly with nothing corrupted or lost — production simply has zero real flat-keyed objects left.

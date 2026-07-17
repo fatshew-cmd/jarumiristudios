@@ -2,8 +2,6 @@
 
 ## Pending
 
-- [ ] Add `og:image` and `twitter:image` meta tags — needs a logo or cover image asset first (deferred from June)
-
 ### Security/Reliability
 - [x] Brute-force protection on `/login` and `/admin/login` — added a `LoginAttempt` collection (TTL-indexed) tracking failed attempts in a 15-minute rolling window, capped at 5, same DB-backed pattern as `enforceGuestSubmissionQuota`/the nudge limiter. `/login` keys on the attempted email; `/admin/login` has no email, so it keys on the `jrmr_vid` visitor cookie instead (deliberately not IP — this app doesn't set `trust proxy` behind Railway, so `req.ip` would resolve to the proxy for everyone).
 - [x] Password reset flow for client accounts — shipped in `792192e` (forgot/reset password flow, trust proxy for prod cookies).
@@ -12,6 +10,9 @@
 
 ### Nice-to-haves
 - [x] "Returning client" trust tier on `/hire` — shipped 2026-07-11 (`ae4471e`) as `hasCompletedProjectHistory()`: anyone (account holder or recognized anonymous visitor) with a `status: "completed"` booking is exempt from the guest submission quota and gets the same upload access as an approved request, without needing an account. See `Plans/journal.md`'s 2026-07-11 entry.
+
+### Branding
+- [x] Real logo asset added (`public/assets/jarumiristudios_logo_0726.png`, 1024×1024) — replaces the 🎬 emoji favicon across all 32 view files (`rel="icon"` + `rel="apple-touch-icon"`) and fills in `og:image`/`twitter:image` on `index.ejs` (2026-07-17), closing the item that was deferred from June for lack of an asset. Square crop is a placeholder for social previews — `summary_large_image` cards prefer 1200×630 and may letterbox a square image; worth a proper crop later. `og:image`/`twitter:image` were pointed at `https://jarumiristudios.com/...` (the domain used everywhere else in the app — `lib/mailer.js`, DNS docs); the pre-existing `og:url` on the same page was found pointing at the stale `https://jarumiri.studio` and corrected to match (2026-07-17).
 
 ### Handoff
 - [ ] Move Stripe off FatShew's own account onto the client's — payment processing is still running through FatShew's Stripe account even though the repo, Railway hosting, and Mongo are now on the client's own infra. Needs a client-owned Stripe account with fresh live/test API keys and webhook secret swapped into the `jarumiristudios` Railway service's `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` variables, plus the webhook endpoint re-pointed in Stripe's dashboard.

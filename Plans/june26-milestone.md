@@ -35,7 +35,7 @@
 
 ## Completed
 
-- [x] Add favicon — 🎬 emoji favicon via SVG data URI
+- [x] Add favicon — 🎬 emoji favicon via SVG data URI (superseded 2026-07-17 — replaced with the real logo asset, see `july26-milestone.md`'s Branding section)
 - [x] Add JSON-LD structured data — marked as `ProfessionalService` with name, description, contact, and service types
 - [x] Build the `/hire` booking form — name, location, email, project brief, file upload (up to 250 MB), Telegram fallback, BR code on submission
 - [x] Build `/track` page — lookup by BR code; alternate method via name + email combo; toggle between both methods
